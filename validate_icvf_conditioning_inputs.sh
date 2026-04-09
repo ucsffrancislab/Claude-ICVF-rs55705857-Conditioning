@@ -20,7 +20,10 @@
 # The script is non-destructive (read-only) and prints a summary report.
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
+# Don't use -e (errexit) — we handle errors explicitly with pass/warn/fail.
+# Trap unexpected errors so they're visible instead of silent.
+trap 'log ""; log "⚠️  Script error at line $LINENO (exit code $?)"; log "  Command: $BASH_COMMAND"' ERR
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 SCORES_DIR=""
@@ -159,7 +162,7 @@ if [[ ${#SCORE_FILES[@]} -eq 0 ]]; then
 else
   log "  Found ${#SCORE_FILES[@]} score file(s):"
   for f in "${SCORE_FILES[@]}"; do
-    log "    $(basename "$f")  ($(du -h "$f" | cut -f1))"
+    log "    $(basename "$f")  ($(ls -lLh "$f" 2>/dev/null | awk '{print $5}' || echo "?"))"
   done
 
   # Extract header from first score file to check columns
@@ -167,11 +170,27 @@ else
   log ""
   log "  Checking columns in: $(basename "$FIRST_SCORE")"
 
-  # Handle gzip
-  if [[ "$FIRST_SCORE" == *.gz ]]; then
-    HEADER=$(zcat "$FIRST_SCORE" | head -1)
+  # Resolve symlinks for reading
+  REAL_SCORE=$(readlink -f "$FIRST_SCORE" 2>/dev/null || echo "$FIRST_SCORE")
+  if [[ ! -s "$REAL_SCORE" ]]; then
+    fail "Score file is empty or unreadable: $FIRST_SCORE"
+    fail "  Resolved path: $REAL_SCORE"
+    HEADER=""
   else
-    HEADER=$(head -1 "$FIRST_SCORE")
+    # Handle gzip
+    if [[ "$FIRST_SCORE" == *.gz ]]; then
+      HEADER=$(zcat "$REAL_SCORE" 2>/dev/null | head -1 || true)
+      if [[ -z "$HEADER" ]]; then
+        # Try gzip -dc as fallback
+        HEADER=$(gzip -dc "$REAL_SCORE" 2>/dev/null | head -1 || true)
+      fi
+    else
+      HEADER=$(head -1 "$REAL_SCORE" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$HEADER" ]]; then
+      fail "Could not read header from: $FIRST_SCORE (resolved: $REAL_SCORE)"
+    fi
   fi
 
   # Count total PGS columns (rough: anything with PGS in the name)
@@ -209,10 +228,11 @@ else
   log ""
   log "  Sample counts per score file:"
   for f in "${SCORE_FILES[@]}"; do
+    rf=$(readlink -f "$f" 2>/dev/null || echo "$f")
     if [[ "$f" == *.gz ]]; then
-      N=$(zcat "$f" | wc -l)
+      N=$(zcat "$rf" 2>/dev/null | wc -l || echo 0)
     else
-      N=$(wc -l < "$f")
+      N=$(wc -l < "$rf" 2>/dev/null || echo 0)
     fi
     log "    $(basename "$f"): $((N - 1)) samples"
   done
@@ -255,6 +275,7 @@ check_vcf_for_snp() {
       continue
     fi
 
+    vcf=$(readlink -f "$vcf" 2>/dev/null || echo "$vcf")
     log "  $ds: checking $(basename "$vcf")"
 
     # Check if tabix index exists
