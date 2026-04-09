@@ -14,7 +14,7 @@
 #     --vcf-dir    /path/to/hg38/vcfs \
 #     [--vcf-hg19-dir /path/to/hg19/vcfs] \
 #     [--raw-geno-dir /path/to/raw/genotypes] \
-#     [--scoring-log-dir /path/to/scoring/logs] \
+#     [--scores-json-dir /path/to/pgs-calc/json] \
 #     [--output validation_report.txt]
 #
 # The script is non-destructive (read-only) and prints a summary report.
@@ -27,7 +27,7 @@ SCORES_DIR=""
 VCF_DIR=""
 VCF_HG19_DIR=""
 RAW_GENO_DIR=""
-SCORING_LOG_DIR=""
+SCORES_JSON_DIR=""
 OUTPUT="validation_report.txt"
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     --vcf-dir)         VCF_DIR="$2";         shift 2 ;;
     --vcf-hg19-dir)    VCF_HG19_DIR="$2";    shift 2 ;;
     --raw-geno-dir)    RAW_GENO_DIR="$2";    shift 2 ;;
-    --scoring-log-dir) SCORING_LOG_DIR="$2"; shift 2 ;;
+    --scores-json-dir) SCORES_JSON_DIR="$2"; shift 2 ;;
     --output)          OUTPUT="$2";          shift 2 ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
@@ -124,7 +124,7 @@ log "Scores dir:       $SCORES_DIR"
 log "VCF dir (hg38):   $VCF_DIR"
 [[ -n "$VCF_HG19_DIR" ]]    && log "VCF dir (hg19):   $VCF_HG19_DIR"
 [[ -n "$RAW_GENO_DIR" ]]    && log "Raw genotype dir:  $RAW_GENO_DIR"
-[[ -n "$SCORING_LOG_DIR" ]] && log "Scoring log dir:   $SCORING_LOG_DIR"
+[[ -n "$SCORES_JSON_DIR" ]] && log "Scores JSON dir:   $SCORES_JSON_DIR"
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  CHECK 1: Do the 18 ICVF PGS exist in the scored data?                  ║
@@ -366,92 +366,141 @@ if [[ -n "$RAW_GENO_DIR" ]]; then
 fi
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║  CHECK 3: PGS variant match rates (from scoring logs)                    ║
+# ║  CHECK 3: PGS variant match rates (from pgs-calc JSON)                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
-header "CHECK 3: PGS scoring variant match rates"
+header "CHECK 3: PGS scoring variant match rates (pgs-calc)"
 
-if [[ -n "$SCORING_LOG_DIR" ]]; then
-  log "  Searching scoring logs in: $SCORING_LOG_DIR"
+if [[ -n "$SCORES_JSON_DIR" ]]; then
+  log "  Searching for scores.info files in: $SCORES_JSON_DIR"
 
-  for pgs in "${ICVF_PGS[@]}"; do
-    expected=${EXPECTED_VARIANTS[$pgs]}
-
-    # Try to find a log file mentioning this PGS
-    log_match=$(grep -rl "$pgs" "$SCORING_LOG_DIR" 2>/dev/null | head -1 || true)
-
-    if [[ -n "$log_match" ]]; then
-      # Try to extract variant counts — patterns vary by scoring software
-      # plink2 --score outputs: "N variants processed", "N variants matched"
-      matched=$(grep -A5 "$pgs" "$log_match" | grep -oiP '(\d+)\s*(variants?\s*)?match' | grep -oP '\d+' | head -1 || true)
-      if [[ -n "$matched" ]]; then
-        pct=$(awk "BEGIN {printf \"%.1f\", 100*$matched/$expected}")
-        if (( $(echo "$matched/$expected > 0.80" | bc -l) )); then
-          pass "$pgs: $matched/$expected variants matched (${pct}%)"
-        elif (( $(echo "$matched/$expected > 0.50" | bc -l) )); then
-          warn "$pgs: $matched/$expected variants matched (${pct}%) — moderate coverage"
-        else
-          fail "$pgs: $matched/$expected variants matched (${pct}%) — LOW coverage"
-        fi
-      else
-        warn "$pgs: Found in logs but couldn't parse variant match count"
-      fi
-    else
-      warn "$pgs: No scoring log found"
-    fi
-  done
-else
-  log "  No --scoring-log-dir provided. Skipping variant match rate check."
-  log ""
-  log "  ALTERNATIVE: If you used plink2 --score, check the .log files for lines like:"
-  log "    --score: N variants processed, M variants matched"
-  log ""
-  log "  Or, if score files include a header with variant counts, we can check those."
-  log ""
-  log "  You can also verify match rates after the fact by checking the PGS scoring"
-  log "  files (.txt.gz from PGS Catalog) against your imputed variant list."
-
-  # Try a quick check: if score files have metadata or we can count non-NA values
-  if [[ ${#SCORE_FILES[@]} -gt 0 ]]; then
-    log ""
-    log "  Quick sanity check — score value distributions (first score file):"
-    FIRST_SCORE="${SCORE_FILES[0]}"
-
-    for pgs in "${ICVF_PGS[@]}"; do
-      if [[ "$FIRST_SCORE" == *.gz ]]; then
-        HEADER_LINE=$(zcat "$FIRST_SCORE" | head -1)
-      else
-        HEADER_LINE=$(head -1 "$FIRST_SCORE")
-      fi
-
-      # Find column index for this PGS
-      COL_IDX=$(echo "$HEADER_LINE" | tr '\t' '\n' | grep -n -i "$pgs" | head -1 | cut -d: -f1 || true)
-
-      if [[ -n "$COL_IDX" ]]; then
-        # Get basic stats (mean, sd, min, max, n_NA) from first 500 samples
-        if [[ "$FIRST_SCORE" == *.gz ]]; then
-          VALS=$(zcat "$FIRST_SCORE" | head -501 | tail -500 | cut -f"$COL_IDX")
-        else
-          VALS=$(head -501 "$FIRST_SCORE" | tail -500 | cut -f"$COL_IDX")
-        fi
-        STATS=$(echo "$VALS" | awk '
-          BEGIN {n=0; s=0; ss=0; na=0; min=1e30; max=-1e30}
-          {
-            if ($1 == "NA" || $1 == "." || $1 == "") { na++; next }
-            n++; v=$1+0; s+=v; ss+=v*v
-            if (v<min) min=v; if (v>max) max=v
-          }
-          END {
-            if (n>0) {
-              mean=s/n; sd=sqrt(ss/n - mean*mean)
-              printf "n=%d NA=%d mean=%.3f sd=%.3f range=[%.3f, %.3f]", n, na, mean, sd, min, max
-            } else {
-              printf "ALL NA or MISSING (%d rows)", na
-            }
-          }')
-        log "    $pgs: $STATS"
-      fi
-    done
+  # Require jq or python for JSON parsing
+  if command -v jq &>/dev/null; then
+    JSON_PARSER="jq"
+  elif command -v python3 &>/dev/null; then
+    JSON_PARSER="python3"
+  else
+    fail "Neither jq nor python3 found — cannot parse JSON. Install one and re-run."
+    JSON_PARSER=""
   fi
+
+  if [[ -n "$JSON_PARSER" ]]; then
+    # Find scores.info files — try per-dataset naming patterns
+    JSON_FILES=()
+    for ds in "${DATASETS[@]}"; do
+      for pattern in \
+        "${SCORES_JSON_DIR}/${ds}"*scores.info \
+        "${SCORES_JSON_DIR}/${ds}/"*scores.info \
+        "${SCORES_JSON_DIR}/${ds}/"*.json \
+        "${SCORES_JSON_DIR}/${ds}"*.json ; do
+        if compgen -G "$pattern" > /dev/null 2>&1; then
+          for jf in $pattern; do
+            JSON_FILES+=("$jf")
+          done
+          break
+        fi
+      done
+    done
+
+    # Also try a single combined file
+    if [[ ${#JSON_FILES[@]} -eq 0 ]]; then
+      for pattern in "${SCORES_JSON_DIR}/scores.info" "${SCORES_JSON_DIR}/"*.json; do
+        if compgen -G "$pattern" > /dev/null 2>&1; then
+          for jf in $pattern; do
+            JSON_FILES+=("$jf")
+          done
+          break
+        fi
+      done
+    fi
+
+    if [[ ${#JSON_FILES[@]} -eq 0 ]]; then
+      fail "No scores.info files found in $SCORES_JSON_DIR"
+    else
+      log "  Found ${#JSON_FILES[@]} JSON file(s):"
+      for jf in "${JSON_FILES[@]}"; do
+        log "    $(basename "$jf")"
+      done
+      log ""
+
+      # Parse each JSON file and check the 18 ICVF PGS
+      # We'll collect results across all dataset JSONs
+      for pgs in "${ICVF_PGS[@]}"; do
+        expected=${EXPECTED_VARIANTS[$pgs]}
+        found_in_any=false
+
+        for jf in "${JSON_FILES[@]}"; do
+          ds_label=$(basename "$jf" .json | sed 's/[_-]*scores$//')
+
+          if [[ "$JSON_PARSER" == "jq" ]]; then
+            # jq approach
+            entry=$(jq -r --arg name "$pgs" '.[] | select(.name == $name) | "\(.variantsUsed)\t\(.variants)\t\(.coverage)\t\(.coverageLabel)\t\(.variantsSwitched)\t\(.variantsAlleleMissmatch)"' "$jf" 2>/dev/null || true)
+          else
+            # python3 approach
+            entry=$(python3 -c "
+import json, sys
+with open('$jf') as f:
+    data = json.load(f)
+for e in data:
+    if e['name'] == '$pgs':
+        print(f\"{e['variantsUsed']}\t{e['variants']}\t{e['coverage']}\t{e['coverageLabel']}\t{e.get('variantsSwitched',0)}\t{e.get('variantsAlleleMissmatch',0)}\")
+        break
+" 2>/dev/null || true)
+          fi
+
+          if [[ -n "$entry" ]]; then
+            found_in_any=true
+            IFS=$'\t' read -r used total cov cov_label switched mismatch <<< "$entry"
+            pct=$(awk "BEGIN {printf \"%.1f\", $cov * 100}")
+
+            if (( $(echo "$cov > 0.80" | bc -l) )); then
+              pass "$pgs ($ds_label): ${used}/${total} variants used (${pct}%, ${cov_label})"
+            elif (( $(echo "$cov > 0.50" | bc -l) )); then
+              warn "$pgs ($ds_label): ${used}/${total} variants used (${pct}%, ${cov_label})"
+            else
+              fail "$pgs ($ds_label): ${used}/${total} variants used (${pct}%, ${cov_label}) — LOW"
+            fi
+
+            # Flag potential issues
+            if [[ "$mismatch" -gt 0 ]]; then
+              warn "  $pgs: $mismatch allele mismatches detected"
+            fi
+            # Only print per first dataset to avoid noise; they should be similar
+            break
+          fi
+        done
+
+        if ! $found_in_any; then
+          fail "$pgs: NOT FOUND in any scores.info — this PGS may not have been scored"
+        fi
+      done
+
+      # Also show a summary of ALL PGS models found (total count)
+      log ""
+      log "  Summary of all models in first JSON file:"
+      jf="${JSON_FILES[0]}"
+      if [[ "$JSON_PARSER" == "jq" ]]; then
+        total_models=$(jq 'length' "$jf" 2>/dev/null || echo "?")
+        high=$(jq '[.[] | select(.coverageLabel == "high")] | length' "$jf" 2>/dev/null || echo "?")
+        med=$(jq '[.[] | select(.coverageLabel == "medium")] | length' "$jf" 2>/dev/null || echo "?")
+        low=$(jq '[.[] | select(.coverageLabel == "low")] | length' "$jf" 2>/dev/null || echo "?")
+      else
+        read -r total_models high med low <<< $(python3 -c "
+import json
+with open('$jf') as f:
+    data = json.load(f)
+h = sum(1 for e in data if e.get('coverageLabel')=='high')
+m = sum(1 for e in data if e.get('coverageLabel')=='medium')
+l = sum(1 for e in data if e.get('coverageLabel')=='low')
+print(f'{len(data)} {h} {m} {l}')
+" 2>/dev/null || echo "? ? ? ?")
+      fi
+      log "    Total models scored: $total_models"
+      log "    Coverage: high=$high, medium=$med, low=$low"
+    fi
+  fi
+else
+  log "  No --scores-json-dir provided. Skipping variant match rate check."
+  log "  Re-run with: --scores-json-dir /path/to/dir/containing/scores.info"
 fi
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
