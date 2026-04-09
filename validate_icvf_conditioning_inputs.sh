@@ -99,9 +99,9 @@ EXPECTED_VARIANTS[PGS001679]=955
 
 # rs55705857 coordinates
 RS_HG38_CHR="chr8"      # or "8" — we check both
-RS_HG38_POS="128748020"
+RS_HG38_POS="129633446"
 RS_HG19_CHR="chr8"
-RS_HG19_POS="130194364"  # hg19 coordinate for rs55705857
+RS_HG19_POS="130645692"  # hg19 coordinate for rs55705857
 RS_ID="rs55705857"
 
 # Dataset names (adjust if yours differ)

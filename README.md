@@ -38,6 +38,8 @@ Check	What it does
 
 ```bash
 
+module load htslib
+
 # Minimal (required args only):
 bash validate_icvf_conditioning_inputs.sh \
   --scores-dir /path/to/your/scores \
