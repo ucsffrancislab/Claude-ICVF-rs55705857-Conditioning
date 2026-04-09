@@ -275,7 +275,6 @@ check_vcf_for_snp() {
       continue
     fi
 
-    vcf=$(readlink -f "$vcf" 2>/dev/null || echo "$vcf")
     log "  $ds: checking $(basename "$vcf")"
 
     # Check if tabix index exists
@@ -301,11 +300,21 @@ check_vcf_for_snp() {
       fi
     else
       # Tabix approach (fast)
-      # Try both "chr8" and "8" formats
+      log "    VCF path: $vcf"
+      log "    Index: $(ls -la "${vcf}.tbi" 2>/dev/null || echo 'NO .tbi') $(ls -la "${vcf}.csi" 2>/dev/null || echo 'NO .csi')"
+      log "    Real path: $(readlink -f "$vcf" 2>/dev/null || echo "$vcf")"
+      log "    Real .tbi: $(ls -la "$(readlink -f "$vcf" 2>/dev/null).tbi" 2>/dev/null || echo 'NO .tbi at real path')"
+
       local result=""
       for chr_fmt in "chr8" "8"; do
-        result=$(tabix "$vcf" "${chr_fmt}:${pos}-${pos}" 2>/dev/null || true)
-        [[ -n "$result" ]] && break
+        log "    Trying: tabix $vcf ${chr_fmt}:${pos}-${pos}"
+        result=$(tabix "$vcf" "${chr_fmt}:${pos}-${pos}" 2>&1 || true)
+        log "    Result: [${result:0:100}]"
+        if [[ -n "$result" ]] && ! echo "$result" | grep -qi "error\|fail\|could not"; then
+          break
+        else
+          result=""
+        fi
       done
 
       if [[ -n "$result" ]]; then
