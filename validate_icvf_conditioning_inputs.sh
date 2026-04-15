@@ -11,7 +11,7 @@
 # Usage:
 #   bash validate_icvf_conditioning_inputs.sh \
 #     --scores-dir /path/to/scores \
-#     --vcf-dir    /path/to/hg38/vcfs \
+#     [--vcf-dir    /path/to/hg38/vcfs] \
 #     [--vcf-hg19-dir /path/to/hg19/vcfs] \
 #     [--raw-geno-dir /path/to/raw/genotypes] \
 #     [--scores-json-dir /path/to/pgs-calc/json] \
@@ -30,7 +30,7 @@ SCORES_DIR=""
 VCF_DIR=""
 VCF_HG19_DIR=""
 RAW_GENO_DIR=""
-SCORES_JSON_DIR=""
+SCORES_JSON_DIR=""  # defaults to SCORES_DIR if not set
 OUTPUT="validation_report.txt"
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
@@ -46,10 +46,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$SCORES_DIR" || -z "$VCF_DIR" ]]; then
-  echo "ERROR: --scores-dir and --vcf-dir are required."
+if [[ -z "$SCORES_DIR" ]]; then
+  echo "ERROR: --scores-dir is required."
   echo "Run with --help or see script header for usage."
   exit 1
+fi
+
+# ── Defaults from other args ──────────────────────────────────────────────────
+if [[ -z "$SCORES_JSON_DIR" ]]; then
+  SCORES_JSON_DIR="$SCORES_DIR"
 fi
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -127,7 +132,7 @@ log "Scores dir:       $SCORES_DIR"
 log "VCF dir (hg38):   $VCF_DIR"
 [[ -n "$VCF_HG19_DIR" ]]    && log "VCF dir (hg19):   $VCF_HG19_DIR"
 [[ -n "$RAW_GENO_DIR" ]]    && log "Raw genotype dir:  $RAW_GENO_DIR"
-[[ -n "$SCORES_JSON_DIR" ]] && log "Scores JSON dir:   $SCORES_JSON_DIR"
+[[ -n "$SCORES_JSON_DIR" && "$SCORES_JSON_DIR" != "$SCORES_DIR" ]] && log "Scores JSON dir:   $SCORES_JSON_DIR"
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  CHECK 1: Do the 18 ICVF PGS exist in the scored data?                  ║
@@ -365,8 +370,13 @@ check_vcf_for_snp() {
   fi
 }
 
-# Check hg38 VCFs (primary)
-check_vcf_for_snp "hg38" "$VCF_DIR" "chr8" "$RS_HG38_POS"
+# Check hg38 VCFs (primary) — only if --vcf-dir was provided
+if [[ -n "$VCF_DIR" ]]; then
+  check_vcf_for_snp "hg38" "$VCF_DIR" "chr8" "$RS_HG38_POS"
+else
+  log ""
+  log "  Skipping hg38 VCF check (--vcf-dir not provided)"
+fi
 
 # Check hg19 VCFs if provided
 if [[ -n "$VCF_HG19_DIR" ]]; then
