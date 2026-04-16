@@ -115,7 +115,7 @@ Option A — 1000 Genomes Phase 3 EUR (recommended):
      plink2 --vcf ALL.chr8.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz \
        --keep eur_samples.txt \
        --chr 8 --from-bp 129645692 --to-bp 131645692 \
-       --make-pgen --out 1000G_EUR_chr8_rs55705857_region
+       --make-bed --out 1000G_EUR_chr8_rs55705857_region
 
   4. Then re-run this script with:
      --ld-ref 1000G_EUR_chr8_rs55705857_region
@@ -150,18 +150,18 @@ REGION_END=$(( RS55705857_POS + LD_WINDOW_KB * 1000 ))
 
 # Extract region from LD reference
 plink2 \
-  --pfile "${LD_REF}" \
+  --bfile "${LD_REF}" \
   --chr "${CHR}" \
   --from-bp "${REGION_START}" \
   --to-bp "${REGION_END}" \
-  --make-pgen \
+  --make-bed \
   --out "${TMPDIR}/region_extract" \
   2>&1 | tee "${TMPDIR}/plink2_extract.log" >&2
 
 # Compute LD with rs55705857
 # plink2 --ld-snp computes r² between the target SNP and all others
 plink2 \
-  --pfile "${TMPDIR}/region_extract" \
+  --bfile "${TMPDIR}/region_extract" \
   --ld-snp "${RS55705857_ID}" \
   --ld-window-kb "${LD_WINDOW_KB}" \
   --ld-window-r2 0 \
@@ -175,7 +175,7 @@ if [[ ! -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
   # Create a single-variant file for the target
   echo "${CHR}:${RS55705857_POS}" > "${TMPDIR}/target_var.txt"
   plink2 \
-    --pfile "${TMPDIR}/region_extract" \
+    --bfile "${TMPDIR}/region_extract" \
     --ld-snp-list "${TMPDIR}/target_var.txt" \
     --ld-window-kb "${LD_WINDOW_KB}" \
     --ld-window-r2 0 \
