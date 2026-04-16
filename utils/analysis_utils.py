@@ -119,14 +119,7 @@ def run_logistic(
     #   Standard: 1=case, 0=control  →  already correct
     raw_vals = set(sub[phenotype_col].dropna().unique())
     if raw_vals <= {2, 1}:
-        # Recode phenotype (auto-detect 2/1 vs 1/0 convention)
-    raw_vals = set(sub[phenotype_col].dropna().unique())
-    if raw_vals <= {2, 1}:
         y = sub[phenotype_col].map({2: 1, 1: 0})
-    elif raw_vals <= {1, 0}:
-        y = sub[phenotype_col].astype(float)
-    else:
-        raise ValueError(f"Unexpected phenotype values: {raw_vals}")
     elif raw_vals <= {1, 0}:
         y = sub[phenotype_col].astype(float)
     else:
