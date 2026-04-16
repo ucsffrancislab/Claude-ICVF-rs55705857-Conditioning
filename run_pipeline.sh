@@ -28,6 +28,9 @@ else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
+# Make the utils/ package importable from any working directory
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
+
 # ── Defaults ─────────────────────────────────────────────────────────────────
 SCORES_DIR=""
 VCF_HG19_DIR=""
