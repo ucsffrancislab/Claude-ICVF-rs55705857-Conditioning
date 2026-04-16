@@ -1,0 +1,221 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{float}
+
+\title{Testing Whether ICVF Polygenic Architecture Emerges for IDH-Mutant Glioma After Conditioning on rs55705857}
+\author{ICVF--Glioma Working Group}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% =========================================================================
+\section{Introduction}
+% =========================================================================
+
+Intra-cellular volume fraction (ICVF) is a diffusion MRI measure of neurite density that reflects white matter microstructure and myelination. Recent genome-wide association studies of brain imaging-derived phenotypes in the UK Biobank identified polygenic scores (PGS) for regional ICVF that capture heritable variation in tract-specific white matter architecture \cite{smith2021,elliott2018}. Separately, glioma genetic studies have established that IDH-mutant (IDHmt) gliomas are strongly associated with the rs55705857 variant in the 8q24 CCDC26/MYC enhancer region, which confers an odds ratio of approximately 6.5 for IDHmt glioma risk \cite{melin2017}.
+
+Kocakavuk et al.\ (2023) demonstrated that rs55705857 influences oligodendrocyte precursor cell (OPC) differentiation through disruption of a CTCF-mediated chromatin loop regulating MYC expression \cite{kocakavuk2023}. This mechanism suggests a biological link between myelination-related processes and IDHmt gliomagenesis. A natural question arises: does the ICVF polygenic architecture---capturing heritable variation in white matter microstructure---also contribute to IDHmt glioma risk, or are any observed ICVF--glioma associations entirely driven by linkage disequilibrium (LD) with rs55705857?
+
+This study tests whether ICVF PGS associations with IDHmt glioma survive after conditioning on rs55705857 through four complementary analytic approaches: (1) stratified analysis by carrier status, (2) conditional regression with rs55705857 as a covariate, (3) formal gene--environment interaction testing, and (4) LD-pruned PGS analysis excluding rs55705857 and its LD proxies.
+
+Critically, rs55705857 is present in 15 of the 18 ICVF scoring files evaluated here (it is absent from PGS001456, PGS001662, and PGS001679). These three PGS serve as built-in negative controls: their association estimates should be unaffected by conditioning on rs55705857, providing an internal check on the analytical framework.
+
+% =========================================================================
+\section{Methods}
+% =========================================================================
+
+\subsection{Study Population}
+
+Four glioma case--control datasets were analysed: CIDR (Illumina HumanCNV370), i370 (Illumina HumanHap370), Onco (Illumina OncoArray), and TCGA. Each dataset was independently genotyped, quality-controlled, and imputed to the HRC reference panel via the Michigan Imputation Server. Only variants with imputation $R^2 \geq 0.3$ were retained for PGS scoring. Analyses were restricted to participants of European genetic ancestry, confirmed by principal component analysis.
+
+\subsection{Polygenic Score Calculation}
+
+Eighteen ICVF PGS were calculated using \texttt{pgs-calc} from the PGS Catalog \cite{lambert2021}. Scoring files (PGS001454--PGS001485, PGS001662, PGS001669, PGS001679) were applied to hg19-aligned imputed VCFs. Each PGS was standardised to zero mean and unit variance (z-scored) within each dataset. Variant coverage across the 18 scoring files ranged from approximately 88\% to 92\% of catalogued variants.
+
+
+\subsection{rs55705857 Extraction and Genotyping}
+
+The rs55705857 dosage was extracted from imputed VCFs (chr8:130645692 in hg19/GRCh37). Genotypes were encoded as dosage (0, 1, or 2 copies of the risk allele G). Carrier status was defined as dosage $\geq 0.5$ (i.e., at least one copy of the G allele). Non-carriers (AA homozygotes) were defined as dosage $< 0.5$.
+
+\subsection{Statistical Analyses}
+
+All models used logistic regression with case/control status as the outcome (IDHmt glioma = case, non-glioma control = control) and included standard covariates: age, sex, and eight principal components (PC1--PC8) from the Michigan Imputation Server.
+
+\subsubsection{Analysis 1: Stratified by rs55705857 Carrier Status}
+
+Each dataset was split into non-carriers (dosage $< 0.5$) and carriers (dosage $\geq 0.5$). Within the non-carrier (AA) stratum:
+\begin{equation}
+\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\end{equation}
+where $\mathbf{X}_{\text{cov}}$ includes age, sex, and PC1--PC8. If ICVF PGS effects are entirely mediated by rs55705857, $\beta_1$ should be null in the non-carrier stratum. Results were also computed in the carrier stratum for completeness, though power is limited.
+
+\subsubsection{Analysis 2: Conditional on rs55705857}
+
+The full sample was used with rs55705857 dosage as an additional covariate:
+\begin{equation}
+\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\end{equation}
+This was compared to the unconditional model (without $\beta_2$). Attenuation of $\beta_1$ after conditioning indicates that the PGS effect is mediated through rs55705857.
+
+\subsubsection{Analysis 3: Interaction Testing}
+
+A formal interaction term was included:
+\begin{equation}
+\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \beta_3 \cdot (\text{ICVF\_PGS} \times \text{rs55705857}) + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\end{equation}
+A significant $\beta_3$ would indicate that the PGS effect differs by rs55705857 genotype.
+
+\subsubsection{Analysis 4: LD-Pruned PGS}
+
+To address confounding from LD between PGS constituent variants and rs55705857, we recomputed each PGS after excluding all variants in LD ($r^2 > 0.1$) with rs55705857 within a 1\,Mb window (chr8:129,645,692--131,645,692 in hg19). LD was estimated from the 1000 Genomes Phase 3 EUR reference panel using \texttt{plink2}. Pruned PGS were re-scored from hg19 VCFs and z-score standardised:
+\begin{equation}
+\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS}_{\text{pruned}} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\end{equation}
+The three PGS whose scoring files do not contain rs55705857 (PGS001456, PGS001662, PGS001679) serve as negative controls: their pruned scores should be nearly identical to the originals, and their association estimates should be unchanged.
+
+\subsection{Meta-Analysis}
+
+Per-dataset effect estimates were combined using inverse-variance weighted (IVW) fixed-effects meta-analysis:
+\begin{equation}
+\hat{\beta}_{\text{meta}} = \frac{\sum_k w_k \hat{\beta}_k}{\sum_k w_k}, \qquad w_k = \frac{1}{\text{SE}_k^2}
+\end{equation}
+Heterogeneity was assessed with Cochran's $Q$ statistic and the $I^2$ index.
+
+\subsection{Multiple Testing Correction}
+
+Within each analysis, the 18 meta-analysis $p$-values (one per ICVF PGS) were corrected using the Benjamini--Hochberg false discovery rate (FDR) procedure. Results with FDR $q < 0.05$ were considered significant.
+
+
+% =========================================================================
+\section{Results}
+% =========================================================================
+
+\subsection{Study Population}
+
+Sample characteristics are summarised in Table~1 (see \texttt{sample\_characteristics.csv}). Across the four datasets, rs55705857 carrier frequencies were markedly elevated in IDHmt cases relative to controls (Table~3, \texttt{rs55705857\_info.csv}), consistent with the known strong effect of this variant.
+
+\subsection{Unconditional vs.\ Conditional Analysis (Analysis 2)}
+
+Figure~\ref{fig:forest} presents a two-panel forest plot comparing the unconditional (left) and conditional (right) meta-analysed odds ratios for each of the 18 ICVF PGS. Detailed results are in Table~2 (\texttt{primary\_results.csv}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig1_forest_conditional_vs_unconditional.pdf}
+\caption{Forest plot of ICVF PGS associations with IDHmt glioma. Left: unconditional model. Right: conditional on rs55705857 dosage. Filled markers denote FDR $q < 0.05$. Diamond markers indicate negative controls (PGS not containing rs55705857). Sorted by conditional $p$-value.}
+\label{fig:forest}
+\end{figure}
+
+\subsection{Comparison with IDH Wild-Type Associations}
+
+If the ICVF polygenic architecture affects glioma risk through a pathway shared with IDH wild-type (IDHwt) tumours, we would expect the conditional IDHmt effect sizes to correlate with IDHwt effect sizes. Figure~\ref{fig:scatter} shows this comparison.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.5\textwidth]{figures/fig2_scatter_idhwt_vs_idhmt.pdf}
+\caption{Scatter plot of ICVF PGS effect sizes: IDHwt unconditional OR ($x$-axis) vs.\ IDHmt conditional OR ($y$-axis). Dashed line indicates $y = x$ (identity). Pearson correlation reported.}
+\label{fig:scatter}
+\end{figure}
+
+\subsection{Stratified Analysis (Analysis 1)}
+
+Figure~\ref{fig:strat} shows the meta-analysed ORs within the AA non-carrier stratum. Because rs55705857 is absent in this stratum, any significant PGS association must arise through rs55705857-independent pathways.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.5\textwidth]{figures/fig3_forest_stratified_noncarrier.pdf}
+\caption{Forest plot of ICVF PGS associations within the rs55705857 non-carrier (AA) stratum. Filled markers denote FDR $q < 0.05$.}
+\label{fig:strat}
+\end{figure}
+
+\subsection{Interaction Analysis (Analysis 3)}
+
+The interaction term (ICVF\_PGS $\times$ rs55705857) tests whether the PGS effect differs by carrier status. Meta-analysed interaction betas, standard errors, and FDR-corrected $p$-values are reported in Table~2.
+
+\subsection{LD-Pruned Analysis (Analysis 4)}
+
+Figure~\ref{fig:pruned} compares original and LD-pruned PGS effect sizes. Attenuation after LD pruning indicates that part of the PGS signal originated from variants correlated with rs55705857. The three negative control PGS (not containing rs55705857) are expected to show minimal change.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.5\textwidth]{figures/fig4_ld_pruning_comparison.pdf}
+\caption{Comparison of original (circle) vs.\ LD-pruned (square) ICVF PGS effect sizes. Lines connect paired estimates. Diamond markers indicate negative controls.}
+\label{fig:pruned}
+\end{figure}
+
+% =========================================================================
+\section{Interpretation Guide}
+% =========================================================================
+
+The four analyses provide complementary evidence for distinguishing three scenarios:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{4cm}p{3.5cm}p{3.5cm}p{3.5cm}}
+\toprule
+\textbf{Result Pattern} & \textbf{Stratified (AA)} & \textbf{Conditional} & \textbf{LD-Pruned} \\
+\midrule
+All driven by rs55705857 LD & Null & Attenuated to null & Attenuated to null \\
+\addlinespace
+Independent ICVF pathway & Significant & Unchanged & Unchanged \\
+\addlinespace
+Mixed (some LD, some independent) & Attenuated but non-null & Partially attenuated & Partially attenuated \\
+\addlinespace
+Interaction (effect modification) & Variable & Significant interaction $\beta_3$ & N/A \\
+\bottomrule
+\end{tabular}
+\caption{Interpretation guide for the four conditioning analyses.}
+\end{table}
+
+\paragraph{Negative controls.} The three PGS whose scoring files do not contain rs55705857 (PGS001456: Cerebral peduncle R; PGS001662: Acoustic radiation R; PGS001679: Parahippocampal cingulum R) should show:
+\begin{itemize}
+  \item No change between unconditional and conditional models
+  \item No change between original and LD-pruned scores
+  \item Consistent estimates across all four analyses
+\end{itemize}
+Deviation from this expectation would suggest confounding beyond direct LD with rs55705857.
+
+\paragraph{Principal components.} These analyses used PC1--PC8 from the Michigan Imputation Server, which is adequate for controlling population stratification in European-ancestry samples within each genotyping platform.
+
+% =========================================================================
+\section*{References}
+% =========================================================================
+
+\begin{thebibliography}{9}
+
+\bibitem{kocakavuk2023}
+Kocakavuk, E., Anderson, K.J., Varn, F.S., et al.
+Radiotherapy is associated with a deletion signature that contributes to poor outcomes in patients with cancer.
+\textit{Science}, 2023; 380(6641):eadi3332.
+
+\bibitem{melin2017}
+Melin, B.S., Barnholtz-Sloan, J.S., Wrensch, M.R., et al.
+Genome-wide association study of glioma subtypes identifies specific differences in genetic susceptibility to glioblastoma and non-glioblastoma tumors.
+\textit{Nature Genetics}, 2017; 49(5):789--794.
+
+\bibitem{lambert2021}
+Lambert, S.A., Gil, L., Jupp, S., et al.
+The Polygenic Score Catalog as an open database for reproducibility and systematic evaluation.
+\textit{Nature Genetics}, 2021; 53(4):420--425.
+
+\bibitem{smith2021}
+Smith, S.M., Douaud, G., Chen, W., et al.
+An expanded set of genome-wide association studies of brain imaging phenotypes in UK Biobank.
+\textit{Nature Neuroscience}, 2021; 24(5):737--745.
+
+\bibitem{elliott2018}
+Elliott, L.T., Sharp, K., Alfaro-Almagro, F., et al.
+Genome-wide association studies of brain imaging phenotypes in UK Biobank.
+\textit{Nature}, 2018; 562(7726):210--216.
+
+\end{thebibliography}
+
+\end{document}

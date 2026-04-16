@@ -14,7 +14,6 @@
 #     [--vcf-dir    /path/to/hg38/vcfs] \
 #     [--vcf-hg19-dir /path/to/hg19/vcfs] \
 #     [--raw-geno-dir /path/to/raw/genotypes] \
-#     [--scores-json-dir /path/to/pgs-calc/json] \
 #     [--output validation_report.txt]
 #
 # The script is non-destructive (read-only) and prints a summary report.
@@ -30,7 +29,6 @@ SCORES_DIR=""
 VCF_DIR=""
 VCF_HG19_DIR=""
 RAW_GENO_DIR=""
-SCORES_JSON_DIR=""  # defaults to SCORES_DIR if not set
 OUTPUT="validation_report.txt"
 
 # ── Parse arguments ───────────────────────────────────────────────────────────
@@ -40,7 +38,6 @@ while [[ $# -gt 0 ]]; do
     --vcf-dir)         VCF_DIR="$2";         shift 2 ;;
     --vcf-hg19-dir)    VCF_HG19_DIR="$2";    shift 2 ;;
     --raw-geno-dir)    RAW_GENO_DIR="$2";    shift 2 ;;
-    --scores-json-dir) SCORES_JSON_DIR="$2"; shift 2 ;;
     --output)          OUTPUT="$2";          shift 2 ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
@@ -50,11 +47,6 @@ if [[ -z "$SCORES_DIR" ]]; then
   echo "ERROR: --scores-dir is required."
   echo "Run with --help or see script header for usage."
   exit 1
-fi
-
-# ── Defaults from other args ──────────────────────────────────────────────────
-if [[ -z "$SCORES_JSON_DIR" ]]; then
-  SCORES_JSON_DIR="$SCORES_DIR"
 fi
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -132,7 +124,7 @@ log "Scores dir:       $SCORES_DIR"
 log "VCF dir (hg38):   $VCF_DIR"
 [[ -n "$VCF_HG19_DIR" ]]    && log "VCF dir (hg19):   $VCF_HG19_DIR"
 [[ -n "$RAW_GENO_DIR" ]]    && log "Raw genotype dir:  $RAW_GENO_DIR"
-[[ -n "$SCORES_JSON_DIR" && "$SCORES_JSON_DIR" != "$SCORES_DIR" ]] && log "Scores JSON dir:   $SCORES_JSON_DIR"
+
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  CHECK 1: Do the 18 ICVF PGS exist in the scored data?                  ║
@@ -410,8 +402,8 @@ fi
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 header "CHECK 3: PGS scoring variant match rates (pgs-calc)"
 
-if [[ -n "$SCORES_JSON_DIR" ]]; then
-  log "  Searching for scores.info files in: $SCORES_JSON_DIR"
+if [[ -n "$SCORES_DIR" ]]; then
+  log "  Searching for scores.info files in: $SCORES_DIR"
 
   # Require jq or python for JSON parsing
   if command -v jq &>/dev/null; then
@@ -428,10 +420,10 @@ if [[ -n "$SCORES_JSON_DIR" ]]; then
     JSON_FILES=()
     for ds in "${DATASETS[@]}"; do
       for pattern in \
-        "${SCORES_JSON_DIR}/${ds}"*scores.info \
-        "${SCORES_JSON_DIR}/${ds}/"*scores.info \
-        "${SCORES_JSON_DIR}/${ds}/"*.json \
-        "${SCORES_JSON_DIR}/${ds}"*.json ; do
+        "${SCORES_DIR}/${ds}"*scores.info \
+        "${SCORES_DIR}/${ds}/"*scores.info \
+        "${SCORES_DIR}/${ds}/"*.json \
+        "${SCORES_DIR}/${ds}"*.json ; do
         if compgen -G "$pattern" > /dev/null 2>&1; then
           for jf in $pattern; do
             JSON_FILES+=("$jf")
@@ -443,7 +435,7 @@ if [[ -n "$SCORES_JSON_DIR" ]]; then
 
     # Also try a single combined file
     if [[ ${#JSON_FILES[@]} -eq 0 ]]; then
-      for pattern in "${SCORES_JSON_DIR}/scores.info" "${SCORES_JSON_DIR}/"*.json; do
+      for pattern in "${SCORES_DIR}/scores.info" "${SCORES_DIR}/"*.json; do
         if compgen -G "$pattern" > /dev/null 2>&1; then
           for jf in $pattern; do
             JSON_FILES+=("$jf")
@@ -454,7 +446,7 @@ if [[ -n "$SCORES_JSON_DIR" ]]; then
     fi
 
     if [[ ${#JSON_FILES[@]} -eq 0 ]]; then
-      fail "No scores.info files found in $SCORES_JSON_DIR"
+      fail "No scores.info files found in $SCORES_DIR"
     else
       log "  Found ${#JSON_FILES[@]} JSON file(s):"
       for jf in "${JSON_FILES[@]}"; do
