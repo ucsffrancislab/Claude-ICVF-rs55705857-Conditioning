@@ -303,7 +303,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
 
     run_step "Stratified analysis" "${LOG_DIR}/03_analysis1_stratified.log" \
         python3 "${SCRIPT_DIR}/scripts/03_analysis1_stratified.py" \
-            --merged-dir  "$MERGED_DIR" \
+            --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
             --datasets    $DATASETS_SPACE
@@ -317,7 +317,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
 
     run_step "Conditional analysis" "${LOG_DIR}/04_analysis2_conditional.log" \
         python3 "${SCRIPT_DIR}/scripts/04_analysis2_conditional.py" \
-            --merged-dir  "$MERGED_DIR" \
+            --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
             --datasets    $DATASETS_SPACE
@@ -331,7 +331,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
 
     run_step "Interaction analysis" "${LOG_DIR}/05_analysis3_interaction.log" \
         python3 "${SCRIPT_DIR}/scripts/05_analysis3_interaction.py" \
-            --merged-dir  "$MERGED_DIR" \
+            --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
             --datasets    $DATASETS_SPACE
@@ -358,7 +358,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         log_info "  6b: Running LD-pruned associations..."
         run_step "LD-pruned analysis" "${LOG_DIR}/06_analysis4_ld_pruned.log" \
             python3 "${SCRIPT_DIR}/scripts/06_analysis4_ld_pruned.py" \
-                --merged-dir      "$MERGED_DIR" \
+                --data-dir      "$MERGED_DIR" \
                 --ld-pruned-dir   "$RESULTS_DIR/ld_pruned" \
                 --outdir          "$RESULTS_DIR" \
                 --phenotype       "$PHENOTYPE" \
