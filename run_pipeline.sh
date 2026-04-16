@@ -305,8 +305,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         python3 "${SCRIPT_DIR}/scripts/03_analysis1_stratified.py" \
             --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
-            --phenotype   "$PHENOTYPE" \
-            --datasets    $DATASETS_SPACE
+            --phenotype   "$PHENOTYPE"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -319,8 +318,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         python3 "${SCRIPT_DIR}/scripts/04_analysis2_conditional.py" \
             --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
-            --phenotype   "$PHENOTYPE" \
-            --datasets    $DATASETS_SPACE
+            --phenotype   "$PHENOTYPE"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -333,8 +331,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         python3 "${SCRIPT_DIR}/scripts/05_analysis3_interaction.py" \
             --data-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
-            --phenotype   "$PHENOTYPE" \
-            --datasets    $DATASETS_SPACE
+            --phenotype   "$PHENOTYPE"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -361,8 +358,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
                 --data-dir      "$MERGED_DIR" \
                 --ld-pruned-dir   "$RESULTS_DIR/ld_pruned" \
                 --outdir          "$RESULTS_DIR" \
-                --phenotype       "$PHENOTYPE" \
-                --datasets        $DATASETS_SPACE
+                --phenotype       "$PHENOTYPE"
     else
         step_header "6/9" "Analysis 4: LD-pruned PGS (SKIPPED)"
         log_warn "No --ld-ref provided. Skipping Analysis 4 (LD-pruned PGS)."
