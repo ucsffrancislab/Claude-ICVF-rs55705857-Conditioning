@@ -31,6 +31,13 @@ fi
 # Make the utils/ package importable from any working directory
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
 
+# Load required modules (cluster-specific; safe no-op if module system absent)
+if command -v module &>/dev/null; then
+    module load plink2   2>/dev/null || true
+    module load bcftools 2>/dev/null || true
+    module load htslib   2>/dev/null || true   # provides tabix
+fi
+
 # ── Defaults ─────────────────────────────────────────────────────────────────
 SCORES_DIR=""
 VCF_HG19_DIR=""
