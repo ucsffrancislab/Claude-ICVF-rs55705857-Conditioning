@@ -355,7 +355,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         run_step "LD-pruned analysis" "${LOG_DIR}/06_analysis4_ld_pruned.log" \
             python3 "${SCRIPT_DIR}/scripts/06_analysis4_ld_pruned.py" \
                 --data-dir      "$MERGED_DIR" \
-                --ld-pruned-dir   "$RESULTS_DIR/ld_pruned" \
+                --pruned-scores-dir   "$RESULTS_DIR/ld_pruned" \
                 --outdir          "$RESULTS_DIR" \
                 --phenotype       "$PHENOTYPE"
     else
