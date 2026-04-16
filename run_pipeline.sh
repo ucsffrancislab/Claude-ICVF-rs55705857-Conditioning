@@ -374,8 +374,7 @@ step_header "7/9" "Generate publication figures"
 run_step "Figures" "${LOG_DIR}/07_figures.log" \
     python3 "${SCRIPT_DIR}/scripts/07_figures.py" \
         --results-dir "$RESULTS_DIR" \
-        --outdir      "$FIGURES_DIR" \
-        --phenotype   "$PHENOTYPE"
+        --outdir      "$FIGURES_DIR"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 8: Results tables
@@ -384,6 +383,7 @@ step_header "8/9" "Generate results tables"
 
 run_step "Tables" "${LOG_DIR}/08_tables.log" \
     python3 "${SCRIPT_DIR}/scripts/08_tables.py" \
+        --data-dir    "$MERGED_DIR" \
         --results-dir "$RESULTS_DIR" \
         --outdir      "$TABLES_DIR" \
         --phenotype   "$PHENOTYPE"

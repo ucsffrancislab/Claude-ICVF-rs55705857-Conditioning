@@ -289,7 +289,7 @@ def process_dataset(
 
     out_df = merged[out_cols].copy()
 
-    out_path = outdir / f"{dataset}_analysis_ready.tsv"
+    out_path = outdir / f"{dataset}_{phenotype}_analysis_ready.tsv"
     out_df.to_csv(out_path, sep="\t", index=False, float_format="%.6f")
 
     n_cases = (out_df["phenotype"] == 1).sum()
