@@ -6,19 +6,28 @@ set -euo pipefail
 #
 # 1. Use plink2 to find variants in LD (r²>0.1) with rs55705857 (±1Mb).
 # 2. For each ICVF PGS scoring file, identify and exclude overlapping variants.
-# 3. Re-score each dataset with pruned scoring files via plink2 --score.
+# 3. Re-score each dataset with pruned scoring files via plink2 --score,
+#    looping over per-chromosome VCFs and aggregating SCORE1_SUM across chroms.
 # 4. Standardise pruned scores to z-scores.
+#
+# Per-chromosome aggregation: a polygenic score is a plain weighted sum
+#   PGS_i = sum_v w_v * d_{i,v}
+# so it is mathematically identical to the sum of per-chromosome partial sums
+#   PGS_i = sum_c sum_{v in c} w_v * d_{i,v}
+# provided we aggregate SCORE1_SUM (the raw weighted sum), NOT SCORE1_AVG
+# (which is (sum)/(2*nonmissing_v) and does not aggregate linearly).
 #
 # Inputs:
 #   --ld-ref          Plink2-format LD reference (prefix, e.g. 1000G EUR)
 #   --pgs-catalog-dir Directory with PGS Catalog scoring files (.txt.gz)
-#   --vcf-hg19-dir    Directory with per-dataset hg19 VCFs for re-scoring
+#   --vcf-hg19-dir    Directory with per-dataset hg19 per-chrom VCFs
 #   --outdir          Output directory
 #
 # Outputs:
-#   pruning_manifest.tsv   — per-PGS list of removed variant IDs
-#   pruning_summary.tsv    — per-PGS removal counts
-#   {dataset}_pruned_scores.tsv — per-dataset pruned PGS (z-scored)
+#   pruning_manifest.tsv         — per-PGS list of removed variant IDs
+#   pruning_summary.tsv          — per-PGS removal counts
+#   scoring_variant_coverage.tsv — per-dataset/PGS variant-match diagnostics
+#   {dataset}_pruned_scores.tsv  — per-dataset aggregated pruned PGS (z-scored)
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +55,9 @@ PGS_NO_RS=("PGS001456" "PGS001662" "PGS001679")
 
 DATASETS=("cidr" "i370" "onco" "tcga")
 
+# Chromosomes to score (all autosomes)
+CHROMS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22)
+
 # ---- Argument parsing ----
 usage() {
   cat <<EOF
@@ -55,16 +67,14 @@ Required:
   --ld-ref DIR            Plink2-format LD reference panel prefix
                           (e.g., path/to/1000G_EUR_chr8)
   --pgs-catalog-dir DIR   Directory with PGS Catalog scoring files (.txt.gz)
-  --vcf-hg19-dir DIR      Directory with per-dataset hg19 VCFs
+  --vcf-hg19-dir DIR      Directory with per-dataset per-chrom hg19 VCFs
+                          (expected: {dir}/{dataset}/chr{N}.dose.vcf.gz)
   --outdir DIR            Output directory
 
 Optional:
   --ld-r2 FLOAT           LD r² threshold (default: 0.1)
   --ld-window-kb INT      LD window in kb (default: 1000)
   -h, --help              Show this message
-
-If --ld-ref is not provided, the script prints instructions for obtaining
-1000 Genomes EUR reference data and exits.
 EOF
   exit "${1:-0}"
 }
@@ -86,59 +96,27 @@ done
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2; }
 
 # ---- Validate inputs ----
-if [[ -z "$PGS_CATALOG_DIR" || -z "$VCF_HG19_DIR" || -z "$OUTDIR" ]]; then
-  echo "ERROR: --pgs-catalog-dir, --vcf-hg19-dir, and --outdir are required." >&2
+if [[ -z "$PGS_CATALOG_DIR" || -z "$VCF_HG19_DIR" || -z "$OUTDIR" || -z "$LD_REF" ]]; then
+  echo "ERROR: --ld-ref, --pgs-catalog-dir, --vcf-hg19-dir, and --outdir are required." >&2
   usage 1
-fi
-
-if [[ -z "$LD_REF" ]]; then
-  cat >&2 <<'INSTRUCTIONS'
-========================================================================
-  LD REFERENCE NOT PROVIDED
-========================================================================
-To run LD pruning you need a plink2-format LD reference for chr8.
-
-Option A — 1000 Genomes Phase 3 EUR (recommended):
-  1. Download:
-     wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/\
-       ALL.chr8.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz
-     wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/\
-       ALL.chr8.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz.tbi
-
-  2. Get EUR sample list:
-     wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/\
-       integrated_call_samples_v3.20130502.ALL.panel
-     awk '$3=="EUR" {print $1, $1}' integrated_call_samples_v3.20130502.ALL.panel \
-       > eur_samples.txt
-
-  3. Convert to plink2 format (chr8 region around rs55705857):
-     plink2 --vcf ALL.chr8.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz \
-       --keep eur_samples.txt \
-       --chr 8 --from-bp 129645692 --to-bp 131645692 \
-       --make-bed --out 1000G_EUR_chr8_rs55705857_region
-
-  4. Then re-run this script with:
-     --ld-ref 1000G_EUR_chr8_rs55705857_region
-
-Option B — Use study controls:
-  If you have plink2 files of your study genotypes, point --ld-ref to them.
-  The script will extract the chr8 region automatically.
-========================================================================
-INSTRUCTIONS
-  exit 1
 fi
 
 mkdir -p "${OUTDIR}"
 TMPDIR="${OUTDIR}/tmp_ld_pruning"
 mkdir -p "${TMPDIR}"
 
-log "Starting LD pruning pipeline"
-log "  LD reference: ${LD_REF}"
+log "================================================================"
+log "Starting LD pruning + per-chromosome PGS scoring pipeline"
+log "  LD reference:    ${LD_REF}"
 log "  PGS catalog dir: ${PGS_CATALOG_DIR}"
-log "  VCF dir: ${VCF_HG19_DIR}"
-log "  Output dir: ${OUTDIR}"
-log "  r² threshold: ${LD_R2_THRESHOLD}"
-log "  LD window: ±${LD_WINDOW_KB}kb"
+log "  VCF dir:         ${VCF_HG19_DIR}"
+log "  Output dir:      ${OUTDIR}"
+log "  r² threshold:    ${LD_R2_THRESHOLD}"
+log "  LD window:       ±${LD_WINDOW_KB}kb"
+log "  Chromosomes:     ${CHROMS[*]}"
+log "  Datasets:        ${DATASETS[*]}"
+log "  PGS count:       ${#PGS_IDS[@]}"
+log "================================================================"
 
 # =============================================================================
 # STEP 1: Compute LD with rs55705857
@@ -148,7 +126,6 @@ log "STEP 1: Computing LD between rs55705857 and variants within ±${LD_WINDOW_K
 REGION_START=$(( RS55705857_POS - LD_WINDOW_KB * 1000 ))
 REGION_END=$(( RS55705857_POS + LD_WINDOW_KB * 1000 ))
 
-# Extract region from LD reference
 plink2 \
   --bfile "${LD_REF}" \
   --chr "${CHR}" \
@@ -158,8 +135,6 @@ plink2 \
   --out "${TMPDIR}/region_extract" \
   2>&1 | tee "${TMPDIR}/plink2_extract.log" >&2
 
-# Compute LD with rs55705857
-# plink2 --ld-snp computes r² between the target SNP and all others
 plink2 \
   --bfile "${TMPDIR}/region_extract" \
   --ld-snp "${RS55705857_ID}" \
@@ -169,94 +144,48 @@ plink2 \
   --out "${TMPDIR}/ld_rs55705857" \
   2>&1 | tee "${TMPDIR}/plink2_ld.log" >&2
 
-# If plink2 --ld-snp fails (variant ID not found), try positional approach
-# plink2 writes .vcor (newer versions) or .vcor2 (older)
 if [[ -f "${TMPDIR}/ld_rs55705857.vcor" ]]; then
-  LD_EXT="vcor"
+  LD_FILE="${TMPDIR}/ld_rs55705857.vcor"
 elif [[ -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
-  LD_EXT="vcor2"
+  LD_FILE="${TMPDIR}/ld_rs55705857.vcor2"
 else
-  LD_EXT=""
+  log "ERROR: LD output file not found (.vcor or .vcor2). See ${TMPDIR}/plink2_ld.log"
+  exit 1
 fi
-if [[ -z "$LD_EXT" ]]; then
-  log "WARNING: --ld-snp by rsID failed; trying positional query"
-  # Create a single-variant file for the target
-  echo "${CHR}:${RS55705857_POS}" > "${TMPDIR}/target_var.txt"
-  plink2 \
-    --bfile "${TMPDIR}/region_extract" \
-    --ld-snp-list "${TMPDIR}/target_var.txt" \
-    --ld-window-kb "${LD_WINDOW_KB}" \
-    --ld-window-r2 0 \
-    --r2-unphased \
-    --out "${TMPDIR}/ld_rs55705857" \
-    2>&1 | tee -a "${TMPDIR}/plink2_ld.log" >&2
-fi
+log "  LD output: ${LD_FILE}"
 
 # =============================================================================
 # STEP 2: Extract variants exceeding r² threshold
 # =============================================================================
 log "STEP 2: Extracting variants with r² > ${LD_R2_THRESHOLD}"
 
-# Detect which extension plink2 used
-if [[ -f "${TMPDIR}/ld_rs55705857.vcor" ]]; then
-  LD_FILE="${TMPDIR}/ld_rs55705857.vcor"
-elif [[ -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
-  LD_FILE="${TMPDIR}/ld_rs55705857.vcor2"
-else
-  log "ERROR: LD output file not found (.vcor or .vcor2)"
-  exit 1
-fi
-if [[ ! -f "$LD_FILE" ]]; then
-  log "ERROR: LD output file not found: ${LD_FILE}"
-  log "Check ${TMPDIR}/plink2_ld.log for details"
-  exit 1
-fi
-
-# Parse the LD output — plink2 .vcor2 is tab-separated:
-# columns: ID_A  ID_B  R2  (or similar)
-# We want all ID_B where R2 > threshold (excluding the target itself)
 LD_VARIANTS="${TMPDIR}/ld_variants_r2_above_threshold.txt"
 
 python3 - "${LD_FILE}" "${LD_R2_THRESHOLD}" "${RS55705857_ID}" "${LD_VARIANTS}" <<'PYEOF'
-import sys, csv, os
+import sys, os
 
 ld_file, r2_thresh, target_id, out_file = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4]
 
 variants = set()
-# Try to parse plink2 LD output (tab-delimited, possibly with header)
+positions = set()
 with open(ld_file) as f:
     for line in f:
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         parts = line.split()
-        # Typical plink2 .vcor2 columns: ID_A POS_A ID_B POS_B UNPHASED_R2
-        # Or simpler: ID_A ID_B R2
-        # We scan for the r2 value (last numeric column)
-        try:
-            r2 = float(parts[-1])
-        except ValueError:
-            continue
-        if r2 >= r2_thresh:
-            # Collect both IDs that are not the target
-            for p in parts:
-                if p != target_id:
-                    try:
-                        float(p)  # skip numeric values
-                    except ValueError:
-                        variants.add(p)
-
-# Also store chr:pos pairs for positional matching
-positions = set()
-with open(ld_file) as f:
-    for line in f:
-        parts = line.strip().split()
         try:
             r2 = float(parts[-1])
         except ValueError:
             continue
         if r2 >= r2_thresh:
             for p in parts:
+                if p == target_id:
+                    continue
+                try:
+                    float(p)
+                except ValueError:
+                    variants.add(p)
                 if ':' in p:
                     positions.add(p)
                 try:
@@ -275,8 +204,7 @@ with open(pos_file, 'w') as f:
     for p in sorted(positions):
         f.write(p + '\n')
 
-print(f"Found {len(variants)} variant IDs with r2 >= {r2_thresh}", file=sys.stderr)
-print(f"Found {len(positions)} chr:pos pairs", file=sys.stderr)
+print(f"  LD parse: {len(variants)} variant IDs, {len(positions)} chr:pos pairs", file=sys.stderr)
 PYEOF
 
 N_LD=$(wc -l < "${LD_VARIANTS}" || echo 0)
@@ -293,12 +221,9 @@ mkdir -p "${PRUNED_DIR}"
 MANIFEST="${OUTDIR}/pruning_manifest.tsv"
 SUMMARY="${OUTDIR}/pruning_summary.tsv"
 
-# Header for manifest
 echo -e "pgs_id\tvariant_id\tchr\tpos\teffect_allele\tweight" > "${MANIFEST}"
-# Header for summary
 echo -e "pgs_id\tn_total\tn_pruned\tn_remaining\tpct_removed\trs55705857_in_scoring" > "${SUMMARY}"
 
-# Python helper to prune a single PGS scoring file
 prune_pgs_file() {
   local PGS_ID="$1"
   local SCORING_FILE="$2"
@@ -312,15 +237,8 @@ prune_pgs_file() {
             "${OUT_PRUNED}" "${OUT_MANIFEST}" "${OUT_SUMMARY}" <<'PRUNE_PY'
 import sys, gzip, os
 
-pgs_id = sys.argv[1]
-scoring_file = sys.argv[2]
-ld_var_file = sys.argv[3]
-ld_pos_file = sys.argv[4]
-out_pruned = sys.argv[5]
-out_manifest = sys.argv[6]
-out_summary = sys.argv[7]
+pgs_id, scoring_file, ld_var_file, ld_pos_file, out_pruned, out_manifest, out_summary = sys.argv[1:8]
 
-# Load LD variant IDs and positions
 ld_ids = set()
 if os.path.isfile(ld_var_file):
     with open(ld_var_file) as f:
@@ -331,9 +249,6 @@ if os.path.isfile(ld_pos_file):
     with open(ld_pos_file) as f:
         ld_positions = {line.strip() for line in f if line.strip()}
 
-# Parse PGS Catalog scoring file
-# Format: header lines starting with #, then tab-separated data
-# Key columns: rsID (or chr_name:chr_position), effect_allele, effect_weight
 opener = gzip.open if scoring_file.endswith('.gz') else open
 header_line = None
 data_lines = []
@@ -342,14 +257,11 @@ with opener(scoring_file, 'rt') as f:
         if line.startswith('#'):
             continue
         if header_line is None:
-            header_line = line.strip().split('	')
+            header_line = line.strip().split('\t')
             continue
-        data_lines.append(line.strip().split('	'))
+        data_lines.append(line.strip().split('\t'))
 
-# Find relevant column indices
 col_map = {c.lower(): i for i, c in enumerate(header_line)}
-
-# Possible ID columns
 rsid_idx = col_map.get('rsid', col_map.get('snpid', col_map.get('variant_id', None)))
 chr_idx = col_map.get('chr_name', col_map.get('chromosome', col_map.get('chr', None)))
 pos_idx = col_map.get('chr_position', col_map.get('position', col_map.get('bp', col_map.get('pos', None))))
@@ -363,18 +275,16 @@ kept_lines = []
 for row in data_lines:
     remove = False
     rsid_val = row[rsid_idx] if rsid_idx is not None and rsid_idx < len(row) else ''
-    chr_val = row[chr_idx] if chr_idx is not None and chr_idx < len(row) else ''
-    pos_val = row[pos_idx] if pos_idx is not None and pos_idx < len(row) else ''
-    ea_val = row[ea_idx] if ea_idx is not None and ea_idx < len(row) else ''
-    wt_val = row[weight_idx] if weight_idx is not None and weight_idx < len(row) else ''
+    chr_val  = row[chr_idx]  if chr_idx  is not None and chr_idx  < len(row) else ''
+    pos_val  = row[pos_idx]  if pos_idx  is not None and pos_idx  < len(row) else ''
+    ea_val   = row[ea_idx]   if ea_idx   is not None and ea_idx   < len(row) else ''
+    wt_val   = row[weight_idx] if weight_idx is not None and weight_idx < len(row) else ''
 
-    # Check if this variant should be removed
     if rsid_val in ld_ids:
         remove = True
     chr_pos = f"{chr_val}:{pos_val}"
     if chr_pos in ld_positions:
         remove = True
-    # Also check without chr prefix
     chr_clean = chr_val.replace('chr', '')
     chr_pos_clean = f"{chr_clean}:{pos_val}"
     if chr_pos_clean in ld_positions:
@@ -389,30 +299,21 @@ n_pruned = len(pruned_variants)
 n_remaining = n_total - n_pruned
 pct_removed = (n_pruned / n_total * 100) if n_total > 0 else 0.0
 
-# Determine if rs55705857 was in the scoring file
-rs_in = any(v[0] == 'rs55705857' for v in pruned_variants)
-# Also check by position
-if not rs_in:
-    rs_in = any(v[2] == '130645692' for v in pruned_variants)
+rs_in = any(v[0] == 'rs55705857' or v[2] == '130645692' for v in pruned_variants)
 
-# Write pruned scoring file with VCF-compatible variant IDs (chr:pos)
-# The VCF uses "chr:pos" format (e.g. "8:130645692") not rsIDs
 chr_col = header_line.index('chr_name') if 'chr_name' in header_line else 1
 pos_col = header_line.index('chr_position') if 'chr_position' in header_line else 2
 
 with open(out_pruned, 'w') as f:
-    # Add vcf_id as first column
     f.write('vcf_id\t' + '\t'.join(header_line) + '\n')
     for row in kept_lines:
         vcf_id = f"{row[chr_col]}:{row[pos_col]}"
         f.write(vcf_id + '\t' + '\t'.join(row) + '\n')
 
-# Append to manifest
 with open(out_manifest, 'a') as f:
     for rsid_val, chr_val, pos_val, ea_val, wt_val in pruned_variants:
         f.write(f"{pgs_id}\t{rsid_val}\t{chr_val}\t{pos_val}\t{ea_val}\t{wt_val}\n")
 
-# Append to summary
 with open(out_summary, 'a') as f:
     rs_flag = 'yes' if rs_in else 'no'
     f.write(f"{pgs_id}\t{n_total}\t{n_pruned}\t{n_remaining}\t{pct_removed:.2f}\t{rs_flag}\n")
@@ -422,7 +323,6 @@ PRUNE_PY
 }
 
 for PGS_ID in "${PGS_IDS[@]}"; do
-  # Find the scoring file (try common naming patterns)
   SCORING_FILE=""
   for pattern in "${PGS_CATALOG_DIR}/${PGS_ID}"*.txt.gz \
                   "${PGS_CATALOG_DIR}/${PGS_ID}"*.txt; do
@@ -433,50 +333,55 @@ for PGS_ID in "${PGS_IDS[@]}"; do
   done
 
   if [[ -z "$SCORING_FILE" ]]; then
-    log "WARNING: Scoring file not found for ${PGS_ID} in ${PGS_CATALOG_DIR} — skipping"
+    log "WARNING: Scoring file not found for ${PGS_ID} — skipping"
     echo -e "${PGS_ID}\t0\t0\t0\t0.00\tNA" >> "${SUMMARY}"
     continue
   fi
 
   PRUNED_FILE="${PRUNED_DIR}/${PGS_ID}_pruned.txt"
-
   prune_pgs_file "${PGS_ID}" "${SCORING_FILE}" "${LD_VARIANTS}" \
                  "${PRUNED_FILE}" "${MANIFEST}" "${SUMMARY}"
 done
 
-log "Pruning summary written to ${SUMMARY}"
-log "Pruning manifest written to ${MANIFEST}"
+log "Pruning summary: ${SUMMARY}"
+log "Pruning manifest: ${MANIFEST}"
 
 # =============================================================================
-# STEP 4: Re-score datasets with pruned scoring files
+# STEP 4: Re-score datasets per-chromosome, aggregate SCORE1_SUM across chroms
 # =============================================================================
-log "STEP 4: Re-scoring datasets with pruned PGS scoring files"
+log "STEP 4: Per-chromosome scoring with pruned PGS files"
+log "  Aggregation: sum of SCORE1_SUM (raw weighted sum) across 22 autosomes."
+log "  SCORE1_AVG is NOT summed — it is a per-allele average whose denominator"
+log "  differs per chrom and cannot be linearly combined."
 
 SCORES_DIR="${OUTDIR}/raw_pruned_scores"
 mkdir -p "${SCORES_DIR}"
 
-for DATASET in "${DATASETS[@]}"; do
-  # Find VCF for this dataset
-  VCF_FILE=""
-  for pattern in "${VCF_HG19_DIR}/${DATASET}/"chr*.dose.vcf.gz \
-                  "${VCF_HG19_DIR}/${DATASET}/"*.vcf.gz \
-                  "${VCF_HG19_DIR}/${DATASET}"*.vcf.gz \
-                  "${VCF_HG19_DIR}/${DATASET}/"*.vcf \
-                  "${VCF_HG19_DIR}/${DATASET}"*.vcf \
-                  "${VCF_HG19_DIR}/${DATASET}/"*.bcf \
-                  "${VCF_HG19_DIR}/${DATASET}"*.bcf; do
-    if compgen -G "$pattern" > /dev/null 2>&1; then
-      VCF_FILE=$(ls $pattern | head -1)
-      break
-    fi
-  done
+# Diagnostic: per-dataset/PGS/chrom variant match counts
+COVERAGE_FILE="${OUTDIR}/scoring_variant_coverage.tsv"
+echo -e "dataset\tpgs_id\tchrom\tvariants_processed\tvariants_skipped\tstatus" > "${COVERAGE_FILE}"
 
-  if [[ -z "$VCF_FILE" ]]; then
-    log "WARNING: VCF not found for ${DATASET} in ${VCF_HG19_DIR} — skipping"
+for DATASET in "${DATASETS[@]}"; do
+  log "  ============================================"
+  log "  Dataset: ${DATASET}"
+  log "  ============================================"
+
+  # Sanity-check that all expected per-chrom VCFs exist
+  DS_VCF_DIR="${VCF_HG19_DIR}/${DATASET}"
+  if [[ ! -d "$DS_VCF_DIR" ]]; then
+    log "  WARNING: VCF dir ${DS_VCF_DIR} not found — skipping ${DATASET}"
     continue
   fi
 
-  log "  Scoring dataset: ${DATASET} (${VCF_FILE})"
+  MISSING_CHROMS=()
+  for CHR_N in "${CHROMS[@]}"; do
+    if [[ ! -f "${DS_VCF_DIR}/chr${CHR_N}.dose.vcf.gz" ]]; then
+      MISSING_CHROMS+=("${CHR_N}")
+    fi
+  done
+  if [[ ${#MISSING_CHROMS[@]} -gt 0 ]]; then
+    log "    NOTE: ${DATASET} missing chroms: ${MISSING_CHROMS[*]}"
+  fi
 
   for PGS_ID in "${PGS_IDS[@]}"; do
     PRUNED_FILE="${PRUNED_DIR}/${PGS_ID}_pruned.txt"
@@ -485,159 +390,207 @@ for DATASET in "${DATASETS[@]}"; do
       continue
     fi
 
-    SCORE_PREFIX="${SCORES_DIR}/${DATASET}_${PGS_ID}"
-
-    # Determine column indices for plink2 --score
-    # PGS Catalog format: rsID chr_name chr_position effect_allele ...  effect_weight
-    # We need: variant-ID-col  allele-col  score-col
-    # Read header to figure out column numbers
+    # Determine column indices (1-based) for plink2 --score
     HEADER=$(head -1 "${PRUNED_FILE}")
-
-    python3 -c "
+    read -r VID_COL EA_COL WT_COL < <(python3 -c "
 import sys
-header = '${HEADER}'.split('\t')
+header = '''${HEADER}'''.split('\t')
 h = {c.lower(): i+1 for i, c in enumerate(header)}
-# variant ID column
-vid = h.get('vcf_id', h.get('rsid', h.get('snpid', h.get('variant_id', 1))))
-# allele column
-ea = h.get('effect_allele', h.get('allele1', h.get('a1', 4)))
-# weight column
-wt = h.get('effect_weight', h.get('weight', h.get('beta', len(header))))
+vid = h.get('vcf_id', 1)
+ea  = h.get('effect_allele', 5)
+wt  = h.get('effect_weight', 7)
 print(f'{vid} {ea} {wt}')
-" > "${TMPDIR}/col_indices_${PGS_ID}.txt"
+")
 
-    read -r VID_COL EA_COL WT_COL < "${TMPDIR}/col_indices_${PGS_ID}.txt"
+    TOTAL_PROCESSED=0
+    TOTAL_SKIPPED=0
+    CHROMS_SCORED=0
 
-    plink2 \
-      --vcf "${VCF_FILE}" dosage=DS \
-      --score "${PRUNED_FILE}" "${VID_COL}" "${EA_COL}" "${WT_COL}" \
-        header cols=+scoresums \
-      --out "${SCORE_PREFIX}" \
-      2>&1 | tee "${SCORES_DIR}/${DATASET}_${PGS_ID}_score.log" >&2 || {
-        log "    WARNING: plink2 --score failed for ${DATASET}/${PGS_ID}"
+    # --- Per-chromosome scoring ---
+    for CHR_N in "${CHROMS[@]}"; do
+      VCF_FILE="${DS_VCF_DIR}/chr${CHR_N}.dose.vcf.gz"
+      if [[ ! -f "$VCF_FILE" ]]; then
+        echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\tvcf_missing" >> "${COVERAGE_FILE}"
         continue
-      }
+      fi
+
+      SCORE_PREFIX="${SCORES_DIR}/${DATASET}_${PGS_ID}_chr${CHR_N}"
+      SCORE_LOG="${SCORES_DIR}/${DATASET}_${PGS_ID}_chr${CHR_N}_score.log"
+
+      plink2 \
+        --vcf "${VCF_FILE}" dosage=DS \
+        --score "${PRUNED_FILE}" "${VID_COL}" "${EA_COL}" "${WT_COL}" \
+          header cols=+scoresums \
+        --out "${SCORE_PREFIX}" \
+        > "${SCORE_LOG}" 2>&1 || {
+          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\tplink2_failed" >> "${COVERAGE_FILE}"
+          continue
+        }
+
+      # Parse variant counts from score log
+      N_PROCESSED=$(grep -oP '\-\-score: \K[0-9]+(?= variants processed)' "${SCORE_LOG}" | tail -1)
+      N_SKIPPED=$(grep -oP '\K[0-9]+(?= entries in)' "${SCORE_LOG}" | tail -1)
+      N_PROCESSED="${N_PROCESSED:-0}"
+      N_SKIPPED="${N_SKIPPED:-0}"
+      echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t${N_PROCESSED}\t${N_SKIPPED}\tok" >> "${COVERAGE_FILE}"
+
+      TOTAL_PROCESSED=$(( TOTAL_PROCESSED + N_PROCESSED ))
+      CHROMS_SCORED=$(( CHROMS_SCORED + 1 ))
+    done
+
+    log "    ${PGS_ID}: ${TOTAL_PROCESSED} variants scored across ${CHROMS_SCORED} chromosomes"
   done
 done
 
+log "Per-chromosome scoring complete."
+log "Variant coverage diagnostics: ${COVERAGE_FILE}"
+
 # =============================================================================
-# STEP 5: Merge and z-score standardise pruned scores
+# STEP 5: Aggregate SCORE1_SUM across chroms, then z-score standardise
 # =============================================================================
-log "STEP 5: Merging and standardising pruned scores"
+log "STEP 5: Aggregating per-chrom SCORE1_SUM and standardising"
 
 for DATASET in "${DATASETS[@]}"; do
   python3 - "${DATASET}" "${SCORES_DIR}" "${OUTDIR}" <<'MERGE_PY'
-import sys, os, glob
+import sys, os, glob, re
 import numpy as np
 
-dataset = sys.argv[1]
-scores_dir = sys.argv[2]
-outdir = sys.argv[3]
+dataset, scores_dir, outdir = sys.argv[1], sys.argv[2], sys.argv[3]
 
-# Collect all .sscore files for this dataset
-score_files = sorted(glob.glob(os.path.join(scores_dir, f"{dataset}_PGS*.sscore")))
-if not score_files:
-    print(f"  No score files found for {dataset} — skipping", file=sys.stderr)
+# Match per-chrom sscore files: {dataset}_{PGS_ID}_chr{N}.sscore
+pattern = os.path.join(scores_dir, f"{dataset}_PGS*_chr*.sscore")
+sscore_files = sorted(glob.glob(pattern))
+if not sscore_files:
+    print(f"  {dataset}: no sscore files found — skipping", file=sys.stderr)
     sys.exit(0)
 
-# Read first file to get IIDs
-merged = None
-for sf in score_files:
-    # Extract PGS ID from filename: {dataset}_{PGS_ID}.sscore
-    basename = os.path.basename(sf)
-    pgs_id = basename.replace(f"{dataset}_", "").replace(".sscore", "")
+# Group by PGS_ID
+fname_re = re.compile(rf"{re.escape(dataset)}_(PGS\d+)_chr(\d+)\.sscore$")
+by_pgs = {}
+for sf in sscore_files:
+    m = fname_re.search(os.path.basename(sf))
+    if not m:
+        continue
+    pgs_id, chrom = m.group(1), int(m.group(2))
+    by_pgs.setdefault(pgs_id, []).append((chrom, sf))
 
-    # plink2 .sscore format: #IID  ALLELE_CT  NAMED_ALLELE_DOSAGE_SUM  SCORE1_AVG  SCORE1_SUM
-    with open(sf) as f:
-        header = f.readline().strip().split('\t')
-
-    # Read as simple text parsing
-    data = {}
-    with open(sf) as f:
-        hdr = f.readline().strip().split('\t')
-        iid_idx = 0  # #IID or IID
-        # Find score column (prefer SCORE1_SUM, else SCORE1_AVG)
-        score_idx = None
+def read_sscore(path):
+    """Return dict {iid: score_sum} using SCORE1_SUM column."""
+    with open(path) as f:
+        hdr = f.readline().rstrip('\n').split('\t')
+        # Locate IID column (first field, may be '#IID' or 'IID')
+        iid_idx = 0
+        # Locate SCORE1_SUM (required — we refuse to aggregate AVG)
+        sum_idx = None
         for i, h in enumerate(hdr):
-            if 'SCORE1_SUM' in h.upper():
-                score_idx = i
+            if h.upper() == 'SCORE1_SUM':
+                sum_idx = i
                 break
-        if score_idx is None:
+        if sum_idx is None:
+            # Fallback: look for any *_SUM column
             for i, h in enumerate(hdr):
-                if 'SCORE1_AVG' in h.upper() or 'SCORE' in h.upper():
-                    score_idx = i
+                if h.upper().endswith('_SUM') and 'SCORE' in h.upper():
+                    sum_idx = i
                     break
-        if score_idx is None:
-            score_idx = len(hdr) - 1  # last column
+        if sum_idx is None:
+            raise RuntimeError(f"No SCORE1_SUM column in {path} — cannot aggregate")
 
+        data = {}
         for line in f:
-            parts = line.strip().split('\t')
+            parts = line.rstrip('\n').split('\t')
             iid = parts[iid_idx].lstrip('#')
             try:
-                val = float(parts[score_idx])
+                data[iid] = float(parts[sum_idx])
             except (ValueError, IndexError):
-                val = float('nan')
-            data[iid] = val
+                data[iid] = float('nan')
+    return data
+
+# Aggregate: per-PGS, sum SCORE1_SUM across chroms per IID
+# This is mathematically identical to scoring against a single merged VCF,
+# because PGS = sum_v w_v * d_{i,v} is additive over disjoint variant sets.
+merged_rows = {}  # iid -> {col: value}
+pgs_col_order = []
+
+n_pgs_expected = len(by_pgs)
+print(f"  {dataset}: aggregating {n_pgs_expected} PGS across per-chrom sscore files", file=sys.stderr)
+
+for pgs_id in sorted(by_pgs.keys()):
+    chrom_files = sorted(by_pgs[pgs_id])
+    chrom_dicts = []
+    for chrom, sf in chrom_files:
+        chrom_dicts.append((chrom, read_sscore(sf)))
+
+    # Sum across chroms — union of IIDs (should be identical across chroms)
+    all_iids = set()
+    for _, d in chrom_dicts:
+        all_iids.update(d.keys())
 
     col_name = f"{pgs_id}_pruned"
-    if merged is None:
-        merged = {iid: {'IID': iid, col_name: val} for iid, val in data.items()}
-    else:
-        for iid, val in data.items():
-            if iid in merged:
-                merged[iid][col_name] = val
-            # Skip IIDs not in the first file
+    pgs_col_order.append(col_name)
 
-# Convert to list-of-dicts
-rows = list(merged.values())
+    for iid in all_iids:
+        total = 0.0
+        contributing = 0
+        for _, d in chrom_dicts:
+            v = d.get(iid)
+            if v is not None and np.isfinite(v):
+                total += v
+                contributing += 1
+        merged_rows.setdefault(iid, {'IID': iid})[col_name] = (
+            total if contributing > 0 else float('nan')
+        )
+
+    print(f"    {pgs_id}: aggregated {len(chrom_dicts)} chroms, "
+          f"{len(all_iids)} samples", file=sys.stderr)
+
+rows = list(merged_rows.values())
 if not rows:
-    print(f"  No data for {dataset}", file=sys.stderr)
+    print(f"  {dataset}: no data after aggregation", file=sys.stderr)
     sys.exit(0)
 
-# Get all columns
-all_cols = sorted({k for r in rows for k in r if k != 'IID'})
-
-# Z-score standardise each PGS column
-for col in all_cols:
-    vals = [r.get(col, float('nan')) for r in rows]
-    arr = np.array(vals, dtype=float)
-    valid = arr[np.isfinite(arr)]
+# Z-score standardise each PGS column (across samples)
+for col in pgs_col_order:
+    vals = np.array([r.get(col, float('nan')) for r in rows], dtype=float)
+    valid = vals[np.isfinite(vals)]
     if len(valid) > 1:
-        mu, sigma = np.mean(valid), np.std(valid, ddof=0)
+        mu, sigma = float(np.mean(valid)), float(np.std(valid, ddof=0))
         if sigma > 0:
             for r in rows:
                 v = r.get(col, float('nan'))
                 r[col] = (v - mu) / sigma if np.isfinite(v) else float('nan')
 
-# Write output
 out_path = os.path.join(outdir, f"{dataset}_pruned_scores.tsv")
 with open(out_path, 'w') as f:
-    header = ['IID'] + all_cols
+    header = ['IID'] + pgs_col_order
     f.write('\t'.join(header) + '\n')
     for r in rows:
-        vals = [r.get(c, '') for c in header]
-        f.write('\t'.join(str(v) for v in vals) + '\n')
+        f.write('\t'.join(str(r.get(c, '')) for c in header) + '\n')
 
-print(f"  {dataset}: {len(rows)} samples, {len(all_cols)} pruned PGS columns -> {out_path}", file=sys.stderr)
+print(f"  {dataset}: wrote {len(rows)} samples × {len(pgs_col_order)} PGS -> {out_path}",
+      file=sys.stderr)
 MERGE_PY
 done
 
 # =============================================================================
 # Cleanup and summary
 # =============================================================================
-log "Cleaning up temporary files"
+log "STEP 6: Cleanup"
 rm -rf "${TMPDIR}"
 
-log "=== LD Pruning Pipeline Complete ==="
-log "Outputs:"
-log "  Pruning summary: ${SUMMARY}"
-log "  Pruning manifest: ${MANIFEST}"
-log "  Pruned scoring files: ${PRUNED_DIR}/"
+log "================================================================"
+log "=== LD Pruning + Per-Chrom Scoring Pipeline Complete ==="
+log "  Pruning summary:    ${SUMMARY}"
+log "  Pruning manifest:   ${MANIFEST}"
+log "  Pruned scoring dir: ${PRUNED_DIR}/"
+log "  Per-chrom sscores:  ${SCORES_DIR}/"
+log "  Coverage diag:      ${COVERAGE_FILE}"
 for DATASET in "${DATASETS[@]}"; do
   OUTFILE="${OUTDIR}/${DATASET}_pruned_scores.tsv"
   if [[ -f "$OUTFILE" ]]; then
-    log "  Pruned scores: ${OUTFILE}"
+    log "  Aggregated scores:  ${OUTFILE}"
   fi
 done
+log "================================================================"
 
+# Echo pruning summary to stdout for quick review
 cat "${SUMMARY}"
