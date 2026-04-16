@@ -395,11 +395,17 @@ rs_in = any(v[0] == 'rs55705857' for v in pruned_variants)
 if not rs_in:
     rs_in = any(v[2] == '130645692' for v in pruned_variants)
 
-# Write pruned scoring file (same format, plink2 --score compatible)
+# Write pruned scoring file with VCF-compatible variant IDs (chr:pos)
+# The VCF uses "chr:pos" format (e.g. "8:130645692") not rsIDs
+chr_col = header_line.index('chr_name') if 'chr_name' in header_line else 1
+pos_col = header_line.index('chr_position') if 'chr_position' in header_line else 2
+
 with open(out_pruned, 'w') as f:
-    f.write('\t'.join(header_line) + '\n')
+    # Add vcf_id as first column
+    f.write('vcf_id\t' + '\t'.join(header_line) + '\n')
     for row in kept_lines:
-        f.write('\t'.join(row) + '\n')
+        vcf_id = f"{row[chr_col]}:{row[pos_col]}"
+        f.write(vcf_id + '\t' + '\t'.join(row) + '\n')
 
 # Append to manifest
 with open(out_manifest, 'a') as f:
@@ -492,7 +498,7 @@ import sys
 header = '${HEADER}'.split('\t')
 h = {c.lower(): i+1 for i, c in enumerate(header)}
 # variant ID column
-vid = h.get('rsid', h.get('snpid', h.get('variant_id', 1)))
+vid = h.get('vcf_id', h.get('rsid', h.get('snpid', h.get('variant_id', 1))))
 # allele column
 ea = h.get('effect_allele', h.get('allele1', h.get('a1', 4)))
 # weight column
