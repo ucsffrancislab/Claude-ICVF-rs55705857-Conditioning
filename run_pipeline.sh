@@ -17,7 +17,16 @@
 set -euo pipefail
 
 # ── Locate pipeline root (where this script lives) ──────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Locate the directory this script lives in.
+# Under SLURM, sbatch copies the script to a spool directory so dirname "$0"
+# points to the wrong place. Use scontrol to recover the original path.
+# Outside SLURM (interactive/local), dirname "$0" works fine.
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    SCRIPT_DIR=$(dirname "$(scontrol show job "$SLURM_JOB_ID" \
+        | awk '/Command=/{sub(/.*Command=/, ""); print $1}')")
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 SCORES_DIR=""
