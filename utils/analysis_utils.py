@@ -312,10 +312,16 @@ def meta_analyze_ivw(results_list: list[dict]) -> dict:
     Q_p = 1 - sp_stats.chi2.cdf(Q, Q_df) if n_datasets > 1 else np.nan
     I2 = max(0, (Q - Q_df) / Q * 100) if Q > 0 and n_datasets > 1 else 0.0
 
+    # Aggregate sample counts across datasets
+    total_n = sum(r.get("n", 0) for r in results_list if r.get("n") is not None)
+    total_cases = sum(r.get("n_cases", 0) for r in results_list if r.get("n_cases") is not None)
+    total_controls = sum(r.get("n_controls", 0) for r in results_list if r.get("n_controls") is not None)
+
     return dict(
         meta_beta=meta_beta, meta_se=meta_se, meta_z=meta_z, meta_p=meta_p,
         meta_or=meta_or, meta_or_lower=meta_or_lower, meta_or_upper=meta_or_upper,
         Q=Q, Q_p=Q_p, I2=I2, n_datasets=n_datasets,
+        n=total_n, n_cases=total_cases, n_controls=total_controls,
     )
 
 

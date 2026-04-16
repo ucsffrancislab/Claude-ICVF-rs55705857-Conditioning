@@ -91,8 +91,13 @@ def table1_sample_characteristics(data_dir, phenotype, outdir):
     for ds_name, ds_path in sorted(datasets.items()):
         df = load_dataset(ds_path)
         n_total = len(df)
-        n_cases = int((df["phenotype"] == 2).sum())
-        n_controls = int((df["phenotype"] == 1).sum())
+        # Handle both PLINK (2/1) and standard (1/0) phenotype coding
+        if df["phenotype"].max() > 1:
+            n_cases = int((df["phenotype"] == 2).sum())
+            n_controls = int((df["phenotype"] == 1).sum())
+        else:
+            n_cases = int((df["phenotype"] == 1).sum())
+            n_controls = int((df["phenotype"] == 0).sum())
 
         dosage = df[RS55705857_COL].dropna()
         geno = dosage.round().astype(int)
@@ -198,8 +203,13 @@ def table3_rs55705857_info(data_dir, phenotype, outdir):
         n_GG = int((geno == 2).sum())
         carrier_pct = (n_AG + n_GG) / len(geno) * 100 if len(geno) > 0 else np.nan
 
-        cases = df[df["phenotype"] == 2]
-        controls = df[df["phenotype"] == 1]
+        # Handle both PLINK (2/1) and standard (1/0) phenotype coding
+        if df["phenotype"].max() > 1:
+            cases = df[df["phenotype"] == 2]
+            controls = df[df["phenotype"] == 1]
+        else:
+            cases = df[df["phenotype"] == 1]
+            controls = df[df["phenotype"] == 0]
         case_carrier = ((cases[RS55705857_COL].round() >= 1).sum() / len(cases) * 100
                         if len(cases) > 0 else np.nan)
         ctrl_carrier = ((controls[RS55705857_COL].round() >= 1).sum() / len(controls) * 100

@@ -452,11 +452,15 @@ mkdir -p "${SCORES_DIR}"
 for DATASET in "${DATASETS[@]}"; do
   # Find VCF for this dataset
   VCF_FILE=""
-  for pattern in "${VCF_HG19_DIR}/${DATASET}"*.vcf.gz \
+  for pattern in "${VCF_HG19_DIR}/${DATASET}/"chr*.dose.vcf.gz \
+                  "${VCF_HG19_DIR}/${DATASET}/"*.vcf.gz \
+                  "${VCF_HG19_DIR}/${DATASET}"*.vcf.gz \
+                  "${VCF_HG19_DIR}/${DATASET}/"*.vcf \
                   "${VCF_HG19_DIR}/${DATASET}"*.vcf \
+                  "${VCF_HG19_DIR}/${DATASET}/"*.bcf \
                   "${VCF_HG19_DIR}/${DATASET}"*.bcf; do
-    if [[ -f "$pattern" ]]; then
-      VCF_FILE="$pattern"
+    if compgen -G "$pattern" > /dev/null 2>&1; then
+      VCF_FILE=$(ls $pattern | head -1)
       break
     fi
   done
