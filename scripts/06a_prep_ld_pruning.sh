@@ -409,8 +409,7 @@ with open(out_manifest, 'a') as f:
 # Append to summary
 with open(out_summary, 'a') as f:
     rs_flag = 'yes' if rs_in else 'no'
-    f.write(f"{pgs_id}\t{n_total}\t{n_pruned}\t{n_remaining}\t{pct_removed:.2f}\t{rs_flag}
-")
+    f.write(f"{pgs_id}\t{n_total}\t{n_pruned}\t{n_remaining}\t{pct_removed:.2f}\t{rs_flag}\n")
 
 print(f"  {pgs_id}: {n_total} total, {n_pruned} pruned, {n_remaining} remaining ({pct_removed:.1f}% removed)", file=sys.stderr)
 PRUNE_PY
