@@ -345,11 +345,10 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         log_info "  6a: Preparing LD-pruned scoring files..."
         run_step "LD pruning prep" "${LOG_DIR}/06a_prep_ld_pruning.log" \
             bash "${SCRIPT_DIR}/scripts/06a_prep_ld_pruning.sh" \
-                --ld-ref         "$LD_REF" \
+                --ld-ref          "$LD_REF" \
                 --pgs-catalog-dir "$PGS_CATALOG_DIR" \
-                --variant-id     "8:130645692" \
-                --outdir         "$RESULTS_DIR/ld_pruned" \
-                --datasets       "$DATASETS_SPACE"
+                --vcf-hg19-dir   "$VCF_HG19_DIR" \
+                --outdir          "$RESULTS_DIR/ld_pruned"
 
         # Step 6b: Run LD-pruned PGS analysis
         log_info "  6b: Running LD-pruned associations..."
