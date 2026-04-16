@@ -96,8 +96,13 @@ def main():
 
         for stratum_name, sub_df in strata_data.items():
             n_total = len(sub_df)
-            n_cases = int((sub_df["phenotype"] == 2).sum())
-            n_controls = int((sub_df["phenotype"] == 1).sum())
+            # Handle both PLINK (2/1) and standard (1/0) phenotype coding
+            if sub_df["phenotype"].max() > 1:
+                n_cases = int((sub_df["phenotype"] == 2).sum())
+                n_controls = int((sub_df["phenotype"] == 1).sum())
+            else:
+                n_cases = int((sub_df["phenotype"] == 1).sum())
+                n_controls = int((sub_df["phenotype"] == 0).sum())
             sample_summary.append(dict(
                 dataset=ds_name, stratum=stratum_name,
                 n_total=n_total, n_cases=n_cases, n_controls=n_controls,
