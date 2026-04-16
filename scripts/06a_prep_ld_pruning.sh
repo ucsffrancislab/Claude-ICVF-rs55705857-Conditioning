@@ -170,7 +170,15 @@ plink2 \
   2>&1 | tee "${TMPDIR}/plink2_ld.log" >&2
 
 # If plink2 --ld-snp fails (variant ID not found), try positional approach
-if [[ ! -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
+# plink2 writes .vcor (newer versions) or .vcor2 (older)
+if [[ -f "${TMPDIR}/ld_rs55705857.vcor" ]]; then
+  LD_EXT="vcor"
+elif [[ -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
+  LD_EXT="vcor2"
+else
+  LD_EXT=""
+fi
+if [[ -z "$LD_EXT" ]]; then
   log "WARNING: --ld-snp by rsID failed; trying positional query"
   # Create a single-variant file for the target
   echo "${CHR}:${RS55705857_POS}" > "${TMPDIR}/target_var.txt"
@@ -189,7 +197,15 @@ fi
 # =============================================================================
 log "STEP 2: Extracting variants with r² > ${LD_R2_THRESHOLD}"
 
-LD_FILE="${TMPDIR}/ld_rs55705857.vcor2"
+# Detect which extension plink2 used
+if [[ -f "${TMPDIR}/ld_rs55705857.vcor" ]]; then
+  LD_FILE="${TMPDIR}/ld_rs55705857.vcor"
+elif [[ -f "${TMPDIR}/ld_rs55705857.vcor2" ]]; then
+  LD_FILE="${TMPDIR}/ld_rs55705857.vcor2"
+else
+  log "ERROR: LD output file not found (.vcor or .vcor2)"
+  exit 1
+fi
 if [[ ! -f "$LD_FILE" ]]; then
   log "ERROR: LD output file not found: ${LD_FILE}"
   log "Check ${TMPDIR}/plink2_ld.log for details"
