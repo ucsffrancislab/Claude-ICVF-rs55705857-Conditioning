@@ -174,7 +174,7 @@ def process_dataset(
         return summary
 
     # Read just the header to find the ID column and target PGS columns
-    pgs_header = pd.read_csv(pgs_path, sep="\t", nrows=0)
+    pgs_header = pd.read_csv(pgs_path, sep=",", nrows=0)
     pgs_cols = list(pgs_header.columns)
 
     # Identify the sample-ID column (first column; may be "sample" or "IID")
@@ -192,7 +192,7 @@ def process_dataset(
 
     # Read only the columns we need
     usecols = [id_col_pgs] + available_pgs
-    pgs = pd.read_csv(pgs_path, sep="\t", usecols=usecols)
+    pgs = pd.read_csv(pgs_path, sep=",", usecols=usecols)
     pgs = pgs.rename(columns={id_col_pgs: "IID"})
     pgs["IID"] = pgs["IID"].astype(str)
     summary["n_pgs_loaded"] = len(pgs)
