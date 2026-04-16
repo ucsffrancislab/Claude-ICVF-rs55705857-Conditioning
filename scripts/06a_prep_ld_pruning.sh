@@ -397,22 +397,19 @@ if not rs_in:
 
 # Write pruned scoring file (same format, plink2 --score compatible)
 with open(out_pruned, 'w') as f:
-    f.write('	'.join(header_line) + '
-')
+    f.write('\t'.join(header_line) + '\n')
     for row in kept_lines:
-        f.write('	'.join(row) + '
-')
+        f.write('\t'.join(row) + '\n')
 
 # Append to manifest
 with open(out_manifest, 'a') as f:
     for rsid_val, chr_val, pos_val, ea_val, wt_val in pruned_variants:
-        f.write(f"{pgs_id}	{rsid_val}	{chr_val}	{pos_val}	{ea_val}	{wt_val}
-")
+        f.write(f"{pgs_id}\t{rsid_val}\t{chr_val}\t{pos_val}\t{ea_val}\t{wt_val}\n")
 
 # Append to summary
 with open(out_summary, 'a') as f:
     rs_flag = 'yes' if rs_in else 'no'
-    f.write(f"{pgs_id}	{n_total}	{n_pruned}	{n_remaining}	{pct_removed:.2f}	{rs_flag}
+    f.write(f"{pgs_id}\t{n_total}\t{n_pruned}\t{n_remaining}\t{pct_removed:.2f}\t{rs_flag}
 ")
 
 print(f"  {pgs_id}: {n_total} total, {n_pruned} pruned, {n_remaining} remaining ({pct_removed:.1f}% removed)", file=sys.stderr)
