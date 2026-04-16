@@ -284,7 +284,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
     step_header "2/9" "Merge data into analysis-ready files"
 
     run_step "Data merge" "${LOG_DIR}/02_merge_data.log" \
-        python "${SCRIPT_DIR}/scripts/02_merge_data.py" \
+        python3 "${SCRIPT_DIR}/scripts/02_merge_data.py" \
             --scores-dir  "$SCORES_DIR" \
             --dosage-dir  "$DOSAGE_DIR" \
             --outdir      "$MERGED_DIR" \
@@ -299,7 +299,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
     step_header "3/9" "Analysis 1: Stratified by carrier status"
 
     run_step "Stratified analysis" "${LOG_DIR}/03_analysis1_stratified.log" \
-        python "${SCRIPT_DIR}/scripts/03_analysis1_stratified.py" \
+        python3 "${SCRIPT_DIR}/scripts/03_analysis1_stratified.py" \
             --merged-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
@@ -313,7 +313,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
     step_header "4/9" "Analysis 2: Conditional on rs55705857"
 
     run_step "Conditional analysis" "${LOG_DIR}/04_analysis2_conditional.log" \
-        python "${SCRIPT_DIR}/scripts/04_analysis2_conditional.py" \
+        python3 "${SCRIPT_DIR}/scripts/04_analysis2_conditional.py" \
             --merged-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
@@ -327,7 +327,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
     step_header "5/9" "Analysis 3: PGS × rs55705857 interaction"
 
     run_step "Interaction analysis" "${LOG_DIR}/05_analysis3_interaction.log" \
-        python "${SCRIPT_DIR}/scripts/05_analysis3_interaction.py" \
+        python3 "${SCRIPT_DIR}/scripts/05_analysis3_interaction.py" \
             --merged-dir  "$MERGED_DIR" \
             --outdir      "$RESULTS_DIR" \
             --phenotype   "$PHENOTYPE" \
@@ -354,7 +354,7 @@ if [[ $SKIP_ANALYSES -eq 0 ]]; then
         # Step 6b: Run LD-pruned PGS analysis
         log_info "  6b: Running LD-pruned associations..."
         run_step "LD-pruned analysis" "${LOG_DIR}/06_analysis4_ld_pruned.log" \
-            python "${SCRIPT_DIR}/scripts/06_analysis4_ld_pruned.py" \
+            python3 "${SCRIPT_DIR}/scripts/06_analysis4_ld_pruned.py" \
                 --merged-dir      "$MERGED_DIR" \
                 --ld-pruned-dir   "$RESULTS_DIR/ld_pruned" \
                 --outdir          "$RESULTS_DIR" \
@@ -373,7 +373,7 @@ fi
 step_header "7/9" "Generate publication figures"
 
 run_step "Figures" "${LOG_DIR}/07_figures.log" \
-    python "${SCRIPT_DIR}/scripts/07_figures.py" \
+    python3 "${SCRIPT_DIR}/scripts/07_figures.py" \
         --results-dir "$RESULTS_DIR" \
         --outdir      "$FIGURES_DIR" \
         --phenotype   "$PHENOTYPE"
@@ -384,7 +384,7 @@ run_step "Figures" "${LOG_DIR}/07_figures.log" \
 step_header "8/9" "Generate results tables"
 
 run_step "Tables" "${LOG_DIR}/08_tables.log" \
-    python "${SCRIPT_DIR}/scripts/08_tables.py" \
+    python3 "${SCRIPT_DIR}/scripts/08_tables.py" \
         --results-dir "$RESULTS_DIR" \
         --outdir      "$TABLES_DIR" \
         --phenotype   "$PHENOTYPE"
