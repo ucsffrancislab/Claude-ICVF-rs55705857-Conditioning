@@ -350,11 +350,16 @@ log "Pruning manifest: ${MANIFEST}"
 # STEP 4: Re-score datasets per-chromosome, aggregate SCORE1_SUM across chroms
 # =============================================================================
 log "STEP 4: Per-chromosome scoring with pruned PGS files"
-log "  --rm-dup exclude-all: drop all copies of duplicated variant IDs (e.g., multi-allelic"
-log "                         sites collapsed to the same chr:pos). Principled & repeatable."
+log "  Strategy:"
+log "    (a) Convert each per-chrom VCF to pgen ONCE (shared across 18 PGS)"
+log "    (b) Score each PGS against that pgen (fast: no VCF re-parsing)"
+log "    (c) Delete pgen before next chrom (minimal peak disk)"
+log "  --rm-dup exclude-all: drop all copies of duplicated variant IDs (e.g.,"
+log "    multi-allelic sites collapsed to the same chr:pos). Applied during the"
+log "    one-time VCF→pgen conversion. Principled & repeatable."
 log "  Aggregation: sum of SCORE1_SUM (raw weighted sum) across 22 autosomes."
-log "  SCORE1_AVG is NOT summed — it is a per-allele average whose denominator"
-log "  differs per chrom and cannot be linearly combined."
+log "  SCORE1_AVG is NOT summed — its denominator differs per chrom and cannot"
+log "  be linearly combined."
 
 SCORES_DIR="${OUTDIR}/raw_pruned_scores"
 mkdir -p "${SCORES_DIR}"
@@ -368,33 +373,63 @@ for DATASET in "${DATASETS[@]}"; do
   log "  Dataset: ${DATASET}"
   log "  ============================================"
 
-  # Sanity-check that all expected per-chrom VCFs exist
   DS_VCF_DIR="${VCF_HG19_DIR}/${DATASET}"
   if [[ ! -d "$DS_VCF_DIR" ]]; then
     log "  WARNING: VCF dir ${DS_VCF_DIR} not found — skipping ${DATASET}"
     continue
   fi
 
-  MISSING_CHROMS=()
-  for CHR_N in "${CHROMS[@]}"; do
-    if [[ ! -f "${DS_VCF_DIR}/chr${CHR_N}.dose.vcf.gz" ]]; then
-      MISSING_CHROMS+=("${CHR_N}")
-    fi
-  done
-  if [[ ${#MISSING_CHROMS[@]} -gt 0 ]]; then
-    log "    NOTE: ${DATASET} missing chroms: ${MISSING_CHROMS[*]}"
-  fi
+  # Working dir for this dataset's pgen files (rotated per chrom)
+  PGEN_DIR="${TMPDIR}/pgen_${DATASET}"
+  mkdir -p "${PGEN_DIR}"
 
-  for PGS_ID in "${PGS_IDS[@]}"; do
-    PRUNED_FILE="${PRUNED_DIR}/${PGS_ID}_pruned.txt"
-    if [[ ! -f "$PRUNED_FILE" ]]; then
-      log "    Skipping ${PGS_ID} — no pruned scoring file"
+  for CHR_N in "${CHROMS[@]}"; do
+    VCF_FILE="${DS_VCF_DIR}/chr${CHR_N}.dose.vcf.gz"
+    if [[ ! -f "$VCF_FILE" ]]; then
+      for PGS_ID in "${PGS_IDS[@]}"; do
+        echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t0\tvcf_missing" >> "${COVERAGE_FILE}"
+      done
       continue
     fi
 
-    # Determine column indices (1-based) for plink2 --score
-    HEADER=$(head -1 "${PRUNED_FILE}")
-    read -r VID_COL EA_COL WT_COL < <(python3 -c "
+    PGEN_PREFIX="${PGEN_DIR}/chr${CHR_N}"
+    CONVERT_LOG="${PGEN_DIR}/chr${CHR_N}_convert.log"
+
+    # --- (a) Convert VCF → pgen ONCE, applying --rm-dup exclude-all here ---
+    CONVERT_START=$SECONDS
+    plink2 \
+      --vcf "${VCF_FILE}" dosage=DS \
+      --rm-dup exclude-all list \
+      --make-pgen \
+      --out "${PGEN_PREFIX}" \
+      > "${CONVERT_LOG}" 2>&1 || {
+        log "    chr${CHR_N}: VCF→pgen conversion FAILED — skipping chrom"
+        for PGS_ID in "${PGS_IDS[@]}"; do
+          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t0\tpgen_convert_failed" >> "${COVERAGE_FILE}"
+        done
+        rm -rf "${PGEN_PREFIX}".*
+        continue
+      }
+    CONVERT_SEC=$(( SECONDS - CONVERT_START ))
+
+    # Capture duplicates dropped during conversion (constant for this chrom)
+    N_DUPS=$(grep -oP '\-\-rm-dup: \K[0-9]+(?= duplicate)' "${CONVERT_LOG}" | tail -1)
+    N_DUPS="${N_DUPS:-0}"
+
+    # --- (b) Score each PGS against the pgen ---
+    SCORE_START=$SECONDS
+    N_OK=0
+    for PGS_ID in "${PGS_IDS[@]}"; do
+      PRUNED_FILE="${PRUNED_DIR}/${PGS_ID}_pruned.txt"
+      if [[ ! -f "$PRUNED_FILE" ]]; then
+        echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t${N_DUPS}\tpruned_missing" >> "${COVERAGE_FILE}"
+        continue
+      fi
+
+      # Determine column indices (1-based) from each file's header (all share
+      # the same schema, but we read per-file in case that ever changes)
+      HEADER=$(head -1 "${PRUNED_FILE}")
+      read -r VID_COL EA_COL WT_COL < <(python3 -c "
 import sys
 header = '''${HEADER}'''.split('\t')
 h = {c.lower(): i+1 for i, c in enumerate(header)}
@@ -404,48 +439,36 @@ wt  = h.get('effect_weight', 7)
 print(f'{vid} {ea} {wt}')
 ")
 
-    TOTAL_PROCESSED=0
-    TOTAL_SKIPPED=0
-    CHROMS_SCORED=0
-
-    # --- Per-chromosome scoring ---
-    for CHR_N in "${CHROMS[@]}"; do
-      VCF_FILE="${DS_VCF_DIR}/chr${CHR_N}.dose.vcf.gz"
-      if [[ ! -f "$VCF_FILE" ]]; then
-        echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\tvcf_missing" >> "${COVERAGE_FILE}"
-        continue
-      fi
-
       SCORE_PREFIX="${SCORES_DIR}/${DATASET}_${PGS_ID}_chr${CHR_N}"
       SCORE_LOG="${SCORES_DIR}/${DATASET}_${PGS_ID}_chr${CHR_N}_score.log"
 
       plink2 \
-        --vcf "${VCF_FILE}" dosage=DS \
-        --rm-dup exclude-all list \
+        --pfile "${PGEN_PREFIX}" \
         --score "${PRUNED_FILE}" "${VID_COL}" "${EA_COL}" "${WT_COL}" \
           header cols=+scoresums \
         --out "${SCORE_PREFIX}" \
         > "${SCORE_LOG}" 2>&1 || {
-          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t0\tplink2_failed" >> "${COVERAGE_FILE}"
+          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t${N_DUPS}\tplink2_failed" >> "${COVERAGE_FILE}"
           continue
         }
 
-      # Parse variant counts from score log
       N_PROCESSED=$(grep -oP '\-\-score: \K[0-9]+(?= variants processed)' "${SCORE_LOG}" | tail -1)
       N_SKIPPED=$(grep -oP '\K[0-9]+(?= entries in)' "${SCORE_LOG}" | tail -1)
-      # --rm-dup writes a "--rm-dup: N duplicate..." line and a .rmdup.list file
-      N_DUPS=$(grep -oP '\-\-rm-dup: \K[0-9]+(?= duplicate)' "${SCORE_LOG}" | tail -1)
       N_PROCESSED="${N_PROCESSED:-0}"
       N_SKIPPED="${N_SKIPPED:-0}"
-      N_DUPS="${N_DUPS:-0}"
       echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t${N_PROCESSED}\t${N_SKIPPED}\t${N_DUPS}\tok" >> "${COVERAGE_FILE}"
-
-      TOTAL_PROCESSED=$(( TOTAL_PROCESSED + N_PROCESSED ))
-      CHROMS_SCORED=$(( CHROMS_SCORED + 1 ))
+      N_OK=$(( N_OK + 1 ))
     done
+    SCORE_SEC=$(( SECONDS - SCORE_START ))
 
-    log "    ${PGS_ID}: ${TOTAL_PROCESSED} variants scored across ${CHROMS_SCORED} chromosomes"
+    # --- (c) Delete this chrom's pgen before moving on ---
+    rm -f "${PGEN_PREFIX}".pgen "${PGEN_PREFIX}".pvar "${PGEN_PREFIX}".psam \
+          "${PGEN_PREFIX}".log "${PGEN_PREFIX}".rmdup.list
+
+    log "    chr${CHR_N}: convert=${CONVERT_SEC}s score=${SCORE_SEC}s (${N_OK}/18 PGS ok, dups=${N_DUPS})"
   done
+
+  rm -rf "${PGEN_DIR}"
 done
 
 log "Per-chromosome scoring complete."
