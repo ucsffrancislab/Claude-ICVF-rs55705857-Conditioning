@@ -350,6 +350,8 @@ log "Pruning manifest: ${MANIFEST}"
 # STEP 4: Re-score datasets per-chromosome, aggregate SCORE1_SUM across chroms
 # =============================================================================
 log "STEP 4: Per-chromosome scoring with pruned PGS files"
+log "  --rm-dup exclude-all: drop all copies of duplicated variant IDs (e.g., multi-allelic"
+log "                         sites collapsed to the same chr:pos). Principled & repeatable."
 log "  Aggregation: sum of SCORE1_SUM (raw weighted sum) across 22 autosomes."
 log "  SCORE1_AVG is NOT summed — it is a per-allele average whose denominator"
 log "  differs per chrom and cannot be linearly combined."
@@ -359,7 +361,7 @@ mkdir -p "${SCORES_DIR}"
 
 # Diagnostic: per-dataset/PGS/chrom variant match counts
 COVERAGE_FILE="${OUTDIR}/scoring_variant_coverage.tsv"
-echo -e "dataset\tpgs_id\tchrom\tvariants_processed\tvariants_skipped\tstatus" > "${COVERAGE_FILE}"
+echo -e "dataset\tpgs_id\tchrom\tvariants_processed\tvariants_skipped\tn_dups_removed\tstatus" > "${COVERAGE_FILE}"
 
 for DATASET in "${DATASETS[@]}"; do
   log "  ============================================"
@@ -419,20 +421,24 @@ print(f'{vid} {ea} {wt}')
 
       plink2 \
         --vcf "${VCF_FILE}" dosage=DS \
+        --rm-dup exclude-all list \
         --score "${PRUNED_FILE}" "${VID_COL}" "${EA_COL}" "${WT_COL}" \
           header cols=+scoresums \
         --out "${SCORE_PREFIX}" \
         > "${SCORE_LOG}" 2>&1 || {
-          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\tplink2_failed" >> "${COVERAGE_FILE}"
+          echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t0\t0\t0\tplink2_failed" >> "${COVERAGE_FILE}"
           continue
         }
 
       # Parse variant counts from score log
       N_PROCESSED=$(grep -oP '\-\-score: \K[0-9]+(?= variants processed)' "${SCORE_LOG}" | tail -1)
       N_SKIPPED=$(grep -oP '\K[0-9]+(?= entries in)' "${SCORE_LOG}" | tail -1)
+      # --rm-dup writes a "--rm-dup: N duplicate..." line and a .rmdup.list file
+      N_DUPS=$(grep -oP '\-\-rm-dup: \K[0-9]+(?= duplicate)' "${SCORE_LOG}" | tail -1)
       N_PROCESSED="${N_PROCESSED:-0}"
       N_SKIPPED="${N_SKIPPED:-0}"
-      echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t${N_PROCESSED}\t${N_SKIPPED}\tok" >> "${COVERAGE_FILE}"
+      N_DUPS="${N_DUPS:-0}"
+      echo -e "${DATASET}\t${PGS_ID}\t${CHR_N}\t${N_PROCESSED}\t${N_SKIPPED}\t${N_DUPS}\tok" >> "${COVERAGE_FILE}"
 
       TOTAL_PROCESSED=$(( TOTAL_PROCESSED + N_PROCESSED ))
       CHROMS_SCORED=$(( CHROMS_SCORED + 1 ))
