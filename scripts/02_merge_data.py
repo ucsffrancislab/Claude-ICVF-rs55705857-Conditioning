@@ -10,7 +10,7 @@ For each dataset (cidr, i370, onco, tcga):
   2. Load PGS z-scores    → keep only the 18 ICVF-relevant columns
   3. Load rs55705857 dosage TSV
   4. Inner-merge on IID
-  5. Define phenotype (idhmt / idhmt_intact / idhmt_codel)
+  5. Define phenotype (idhmt / idhmt_intact / idhmt_codel / idhwt / idhwt_gbm)
   6. Encode sex as numeric (F=0, M=1)
   7. Drop samples with any missing covariates, PGS, or dosage
   8. Standardize each PGS to mean=0, sd=1 within the dataset
@@ -55,7 +55,7 @@ REQUIRED_COVARIATES = ["age", "sex", "PC1", "PC2", "PC3", "PC4",
 DOSAGE_COLUMN = "rs55705857_dosage"
 
 # Valid phenotype definitions
-VALID_PHENOTYPES = {"idhmt", "idhmt_intact", "idhmt_codel"}
+VALID_PHENOTYPES = {"idhmt", "idhmt_intact", "idhmt_codel", "idhwt", "idhwt_gbm"}
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ def define_phenotype(df: pd.DataFrame, phenotype: str) -> pd.DataFrame:
     Parameters
     ----------
     df : DataFrame with at least columns 'case', 'idh', and optionally 'pq'.
-    phenotype : one of 'idhmt', 'idhmt_intact', 'idhmt_codel'.
+    phenotype : one of 'idhmt', 'idhmt_intact', 'idhmt_codel', 'idhwt', 'idhwt_gbm'.
 
     Returns
     -------
@@ -97,6 +97,11 @@ def define_phenotype(df: pd.DataFrame, phenotype: str) -> pd.DataFrame:
     elif phenotype == "idhmt_codel":
         # Cases: IDH-mutant, 1p/19q co-deleted  (idh == 1 & pq == 1)
         is_case = (out["idh"] == 1) & (out["pq"] == 1)
+    elif phenotype in ("idhwt", "idhwt_gbm"):
+        # Cases: IDH-wildtype glioma  (idh == 0)
+        # idhwt_gbm uses the same filter here; further GBM subsetting
+        # should be done upstream via histology if available.
+        is_case = out["idh"] == 0
     else:
         raise ValueError(f"Unknown phenotype: {phenotype!r}. "
                          f"Choose from {VALID_PHENOTYPES}")

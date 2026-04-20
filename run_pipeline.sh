@@ -3,7 +3,7 @@
 # run_pipeline.sh — Master runner for the ICVF conditioning analysis pipeline
 #
 # Tests whether ICVF (brain white matter) polygenic scores become significant
-# for IDH-mutant glioma risk after conditioning on rs55705857.
+# for IDH-mutant (or IDH-wildtype) glioma risk after conditioning on rs55705857.
 #
 # Usage:
 #   bash run_pipeline.sh \
@@ -103,8 +103,9 @@ Usage: run_pipeline.sh [OPTIONS]
 
 ICVF Conditioning Analysis Pipeline
 ====================================
-Tests whether ICVF polygenic scores associate with IDH-mutant glioma risk
-after conditioning on the major risk variant rs55705857 (OR ≈ 6.5).
+Tests whether ICVF polygenic scores associate with glioma risk (IDH-mutant
+or IDH-wildtype subtypes) after conditioning on the major risk variant
+rs55705857 (OR ≈ 6.5).
 
 Required arguments:
   --scores-dir DIR        Directory containing {dataset}-covariates.csv and
@@ -119,7 +120,7 @@ Optional arguments:
   --pgs-catalog-dir DIR   Path to PGS Catalog scoring files (.txt.gz).
                           Required only if --ld-ref is provided.
   --output-dir DIR        Top-level output directory (default: ./output)
-  --phenotype STR         Phenotype: idhmt (default), idhmt_intact, idhmt_codel
+  --phenotype STR         Phenotype: idhmt (default), idhmt_intact, idhmt_codel, idhwt, idhwt_gbm
   --datasets LIST         Comma-separated dataset names (default: cidr,i370,onco,tcga)
   --skip-extraction       Skip Step 1 (dosage extraction) if already done
   --skip-analyses         Skip Steps 3–6 and go straight to figures/tables
@@ -170,8 +171,8 @@ fi
 
 # Validate phenotype
 case "$PHENOTYPE" in
-    idhmt|idhmt_intact|idhmt_codel) ;;
-    *) log_error "Invalid phenotype: $PHENOTYPE (must be idhmt, idhmt_intact, or idhmt_codel)"; exit 1 ;;
+    idhmt|idhmt_intact|idhmt_codel|idhwt|idhwt_gbm) ;;
+    *) log_error "Invalid phenotype: $PHENOTYPE (must be idhmt, idhmt_intact, idhmt_codel, idhwt, or idhwt_gbm)"; exit 1 ;;
 esac
 
 # Convert comma-separated datasets to space-separated for bash iteration
@@ -380,7 +381,8 @@ step_header "7/9" "Generate publication figures"
 run_step "Figures" "${LOG_DIR}/07_figures.log" \
     python3 "${SCRIPT_DIR}/scripts/07_figures.py" \
         --results-dir "$RESULTS_DIR" \
-        --outdir      "$FIGURES_DIR"
+        --outdir      "$FIGURES_DIR" \
+        --phenotype   "$PHENOTYPE"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  STEP 8: Results tables

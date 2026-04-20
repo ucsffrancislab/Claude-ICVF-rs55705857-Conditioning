@@ -9,8 +9,13 @@
 \usepackage{xcolor}
 \usepackage{float}
 
-\title{Testing Whether ICVF Polygenic Architecture Emerges for IDH-Mutant Glioma After Conditioning on rs55705857}
+\title{Testing Whether ICVF Polygenic Architecture Emerges for \phenolabel{} After Conditioning on rs55705857}
 \author{ICVF--Glioma Working Group}
+% ── Phenotype label ──────────────────────────────────────────────
+% Change \phenolabel when running for a different IDH subtype:
+%   IDH-mutant:   \newcommand{\phenolabel}{IDH-Mutant Glioma}
+%   IDH-wildtype: \newcommand{\phenolabel}{IDH-Wildtype Glioma}
+\newcommand{\phenolabel}{IDH-Mutant Glioma}
 \date{\today}
 
 \begin{document}
@@ -20,11 +25,11 @@
 \section{Introduction}
 % =========================================================================
 
-Intra-cellular volume fraction (ICVF) is a diffusion MRI measure of neurite density that reflects white matter microstructure and myelination. Recent genome-wide association studies of brain imaging-derived phenotypes in the UK Biobank identified polygenic scores (PGS) for regional ICVF that capture heritable variation in tract-specific white matter architecture \cite{smith2021,elliott2018}. Separately, glioma genetic studies have established that IDH-mutant (IDHmt) gliomas are strongly associated with the rs55705857 variant in the 8q24 CCDC26/MYC enhancer region, which confers an odds ratio of approximately 6.5 for IDHmt glioma risk \cite{melin2017}.
+Intra-cellular volume fraction (ICVF) is a diffusion MRI measure of neurite density that reflects white matter microstructure and myelination. Recent genome-wide association studies of brain imaging-derived phenotypes in the UK Biobank identified polygenic scores (PGS) for regional ICVF that capture heritable variation in tract-specific white matter architecture \cite{smith2021,elliott2018}. Separately, glioma genetic studies have established that IDH-mutant (IDHmt) gliomas are strongly associated with the rs55705857 variant in the 8q24 CCDC26/MYC enhancer region, which confers an odds ratio of approximately 6.5 for \phenolabel{} risk \cite{melin2017}.
 
-Kocakavuk et al.\ (2023) demonstrated that rs55705857 influences oligodendrocyte precursor cell (OPC) differentiation through disruption of a CTCF-mediated chromatin loop regulating MYC expression \cite{kocakavuk2023}. This mechanism suggests a biological link between myelination-related processes and IDHmt gliomagenesis. A natural question arises: does the ICVF polygenic architecture---capturing heritable variation in white matter microstructure---also contribute to IDHmt glioma risk, or are any observed ICVF--glioma associations entirely driven by linkage disequilibrium (LD) with rs55705857?
+Kocakavuk et al.\ (2023) demonstrated that rs55705857 influences oligodendrocyte precursor cell (OPC) differentiation through disruption of a CTCF-mediated chromatin loop regulating MYC expression \cite{kocakavuk2023}. This mechanism suggests a biological link between myelination-related processes and \phenolabel{}genesis. A natural question arises: does the ICVF polygenic architecture---capturing heritable variation in white matter microstructure---also contribute to \phenolabel{} risk, or are any observed ICVF--glioma associations entirely driven by linkage disequilibrium (LD) with rs55705857?
 
-This study tests whether ICVF PGS associations with IDHmt glioma survive after conditioning on rs55705857 through four complementary analytic approaches: (1) stratified analysis by carrier status, (2) conditional regression with rs55705857 as a covariate, (3) formal gene--environment interaction testing, and (4) LD-pruned PGS analysis excluding rs55705857 and its LD proxies.
+This study tests whether ICVF PGS associations with \phenolabel{} survive after conditioning on rs55705857 through four complementary analytic approaches: (1) stratified analysis by carrier status, (2) conditional regression with rs55705857 as a covariate, (3) formal gene--environment interaction testing, and (4) LD-pruned PGS analysis excluding rs55705857 and its LD proxies.
 
 Critically, rs55705857 is present in 15 of the 18 ICVF scoring files evaluated here (it is absent from PGS001456, PGS001662, and PGS001679). These three PGS serve as built-in negative controls: their association estimates should be unaffected by conditioning on rs55705857, providing an internal check on the analytical framework.
 
@@ -47,13 +52,13 @@ The rs55705857 dosage was extracted from imputed VCFs (chr8:130645692 in hg19/GR
 
 \subsection{Statistical Analyses}
 
-All models used logistic regression with case/control status as the outcome (IDHmt glioma = case, non-glioma control = control) and included standard covariates: age, sex, and eight principal components (PC1--PC8) from the Michigan Imputation Server.
+All models used logistic regression with case/control status as the outcome (\phenolabel{} = case, non-glioma control = control) and included standard covariates: age, sex, and eight principal components (PC1--PC8) from the Michigan Imputation Server.
 
 \subsubsection{Analysis 1: Stratified by rs55705857 Carrier Status}
 
 Each dataset was split into non-carriers (dosage $< 0.5$) and carriers (dosage $\geq 0.5$). Within the non-carrier (AA) stratum:
 \begin{equation}
-\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\text{logit}(P[\text{case}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
 \end{equation}
 where $\mathbf{X}_{\text{cov}}$ includes age, sex, and PC1--PC8. If ICVF PGS effects are entirely mediated by rs55705857, $\beta_1$ should be null in the non-carrier stratum. Results were also computed in the carrier stratum for completeness, though power is limited.
 
@@ -61,7 +66,7 @@ where $\mathbf{X}_{\text{cov}}$ includes age, sex, and PC1--PC8. If ICVF PGS eff
 
 The full sample was used with rs55705857 dosage as an additional covariate:
 \begin{equation}
-\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\text{logit}(P[\text{case}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
 \end{equation}
 This was compared to the unconditional model (without $\beta_2$). Attenuation of $\beta_1$ after conditioning indicates that the PGS effect is mediated through rs55705857.
 
@@ -69,7 +74,7 @@ This was compared to the unconditional model (without $\beta_2$). Attenuation of
 
 A formal interaction term was included:
 \begin{equation}
-\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \beta_3 \cdot (\text{ICVF\_PGS} \times \text{rs55705857}) + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\text{logit}(P[\text{case}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS} + \beta_2 \cdot \text{rs55705857} + \beta_3 \cdot (\text{ICVF\_PGS} \times \text{rs55705857}) + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
 \end{equation}
 A significant $\beta_3$ would indicate that the PGS effect differs by rs55705857 genotype.
 
@@ -77,7 +82,7 @@ A significant $\beta_3$ would indicate that the PGS effect differs by rs55705857
 
 To address confounding from LD between PGS constituent variants and rs55705857, we recomputed each PGS after excluding all variants in LD ($r^2 > 0.1$) with rs55705857 within a 1\,Mb window (chr8:129,645,692--131,645,692 in hg19). LD was estimated from the 1000 Genomes Phase 3 EUR reference panel using \texttt{plink2}. Pruned PGS were re-scored from hg19 VCFs and z-score standardised:
 \begin{equation}
-\text{logit}(P[\text{IDHmt}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS}_{\text{pruned}} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
+\text{logit}(P[\text{case}]) = \beta_0 + \beta_1 \cdot \text{ICVF\_PGS}_{\text{pruned}} + \boldsymbol{\beta}_c^\top \mathbf{X}_{\text{cov}}
 \end{equation}
 The three PGS whose scoring files do not contain rs55705857 (PGS001456, PGS001662, PGS001679) serve as negative controls: their pruned scores should be nearly identical to the originals, and their association estimates should be unchanged.
 
@@ -109,7 +114,7 @@ Figure~\ref{fig:forest} presents a two-panel forest plot comparing the unconditi
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{figures/fig1_forest_conditional_vs_unconditional.pdf}
-\caption{Forest plot of ICVF PGS associations with IDHmt glioma. Left: unconditional model. Right: conditional on rs55705857 dosage. Filled markers denote FDR $q < 0.05$. Diamond markers indicate negative controls (PGS not containing rs55705857). Sorted by conditional $p$-value.}
+\caption{Forest plot of ICVF PGS associations with \phenolabel{}. Left: unconditional model. Right: conditional on rs55705857 dosage. Filled markers denote FDR $q < 0.05$. Diamond markers indicate negative controls (PGS not containing rs55705857). Sorted by conditional $p$-value.}
 \label{fig:forest}
 \end{figure}
 

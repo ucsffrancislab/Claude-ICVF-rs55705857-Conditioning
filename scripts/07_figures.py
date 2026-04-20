@@ -60,7 +60,16 @@ COLOR_COND = "#b2182b"        # red
 COLOR_PRUNED = "#4daf4a"      # green
 COLOR_STRAT = "#984ea3"       # purple
 COLOR_NEG_CTRL = "#ff7f00"    # orange for negative controls
-COLOR_FDR_SIG = "#d62728"     # red filled
+COLOR_FDR_SIG = "#d62728"
+
+# Phenotype display labels for figure titles
+PHENOTYPE_LABELS = {
+    "idhmt": "IDH-Mutant Glioma",
+    "idhmt_intact": "IDH-Mutant, 1p/19q-Intact",
+    "idhmt_codel": "IDH-Mutant, 1p/19q-Codeleted",
+    "idhwt": "IDH-Wildtype Glioma",
+    "idhwt_gbm": "IDH-Wildtype Glioblastoma",
+}     # red filled
 COLOR_NS = "#7f7f7f"          # grey for non-significant
 COLOR_IDHWT = "#1b9e77"       # teal
 
@@ -92,6 +101,8 @@ def parse_args():
     parser.add_argument("--outdir", required=True)
     parser.add_argument("--idh-wt-results", default=None,
                         help="CSV with IDHwt unconditional results for scatter plot.")
+    parser.add_argument("--phenotype", default="idhmt",
+                        help="Phenotype label for figure titles (default: idhmt).")
     return parser.parse_args()
 
 
@@ -123,7 +134,7 @@ def save_fig(fig, outdir, name):
 # Figure 1: Forest plot — conditional vs unconditional
 # =========================================================================
 
-def figure1_forest_conditional(results_dir, outdir):
+def figure1_forest_conditional(results_dir, outdir, phenotype_label="IDH-Mutant Glioma"):
     """Two-panel forest plot: unconditional (left) vs conditional (right)."""
     filepath = os.path.join(results_dir, "analysis2_conditional_results.csv")
     if not os.path.isfile(filepath):
@@ -151,8 +162,8 @@ def figure1_forest_conditional(results_dir, outdir):
     )
 
     for ax, df, color, title in [
-        (ax_u, uncond, COLOR_UNCOND, "Unconditional"),
-        (ax_c, cond, COLOR_COND, "Conditional on rs55705857"),
+        (ax_u, uncond, COLOR_UNCOND, f"{phenotype_label} — Unconditional"),
+        (ax_c, cond, COLOR_COND, f"{phenotype_label} — Conditional on rs55705857"),
     ]:
         for i, (_, row) in enumerate(df.iterrows()):
             pgs_id = row["pgs_id"]
@@ -320,7 +331,7 @@ def figure2_scatter_comparison(results_dir, outdir, idh_wt_path):
 # Figure 3: Stratified forest plot (AA non-carriers)
 # =========================================================================
 
-def figure3_forest_stratified(results_dir, outdir):
+def figure3_forest_stratified(results_dir, outdir, phenotype_label="IDH-Mutant Glioma"):
     """Single-panel forest: ORs in the AA non-carrier stratum."""
     filepath = os.path.join(results_dir, "analysis1_stratified_results.csv")
     if not os.path.isfile(filepath):
@@ -365,7 +376,7 @@ def figure3_forest_stratified(results_dir, outdir):
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
     ax.set_xlabel("Odds Ratio (95% CI)")
-    ax.set_title("AA Non-Carrier Stratum", fontweight="bold")
+    ax.set_title(f"{phenotype_label} — AA Non-Carrier Stratum", fontweight="bold")
 
     legend_elements = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_STRAT,
@@ -384,7 +395,7 @@ def figure3_forest_stratified(results_dir, outdir):
 # Figure 4: LD pruning comparison
 # =========================================================================
 
-def figure4_ld_pruning(results_dir, outdir):
+def figure4_ld_pruning(results_dir, outdir, phenotype_label="IDH-Mutant Glioma"):
     """Paired dot plot: unconditional vs LD-pruned effect sizes."""
     uncond_path = os.path.join(results_dir, "analysis2_conditional_results.csv")
     pruned_path = os.path.join(results_dir, "analysis4_ld_pruned_results.csv")
@@ -451,7 +462,7 @@ def figure4_ld_pruning(results_dir, outdir):
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
     ax.set_xlabel("Odds Ratio (95% CI)")
-    ax.set_title("Original vs LD-Pruned PGS", fontweight="bold")
+    ax.set_title(f"{phenotype_label} — Original vs LD-Pruned PGS", fontweight="bold")
 
     legend_elements = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_UNCOND,
@@ -480,17 +491,21 @@ def main():
     print(f"  Output dir:  {args.outdir}")
     print()
 
+    phenotype_label = PHENOTYPE_LABELS.get(args.phenotype, args.phenotype)
+    print(f"  Phenotype:   {args.phenotype} ({phenotype_label})")
+    print()
+
     print("[Figure 1] Forest plot: conditional vs unconditional")
-    figure1_forest_conditional(args.results_dir, args.outdir)
+    figure1_forest_conditional(args.results_dir, args.outdir, phenotype_label)
 
     print("[Figure 2] Scatter: IDHwt vs IDHmt conditional")
     figure2_scatter_comparison(args.results_dir, args.outdir, args.idh_wt_results)
 
     print("[Figure 3] Forest plot: AA non-carrier stratum")
-    figure3_forest_stratified(args.results_dir, args.outdir)
+    figure3_forest_stratified(args.results_dir, args.outdir, phenotype_label)
 
     print("[Figure 4] LD pruning comparison")
-    figure4_ld_pruning(args.results_dir, args.outdir)
+    figure4_ld_pruning(args.results_dir, args.outdir, phenotype_label)
 
     print()
     print("=== All figures complete ===")

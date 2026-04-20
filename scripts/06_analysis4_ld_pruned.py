@@ -5,7 +5,7 @@
 Read pre-computed LD-pruned ICVF PGS scores (from 06a_prep_ld_pruning)
 and run unconditional association tests:
 
-  logit(IDHmt) ~ ICVF_PGS_pruned + age + sex + PC1-PC8
+  logit(phenotype) ~ ICVF_PGS_pruned + age + sex + PC1-PC8
 
 Meta-analyse across datasets.  FDR correction across 18 tests.
 Compare to Analysis 2 unconditional results if available.

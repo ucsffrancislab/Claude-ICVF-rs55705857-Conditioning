@@ -7,7 +7,7 @@ Split each dataset by rs55705857 carrier status:
   - Carriers: dosage >= 0.5
 
 Within each stratum, test each ICVF PGS:
-  logit(IDHmt) ~ ICVF_PGS + age + sex + PC1-PC8
+  logit(phenotype) ~ ICVF_PGS + age + sex + PC1-PC8
 
 Meta-analyse across datasets within each stratum.
 FDR correction across the 18 meta-analysis p-values (per stratum).

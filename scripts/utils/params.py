@@ -165,6 +165,20 @@ PHENOTYPE_DEFINITIONS: dict[str, dict[str, Any]] = {
             "population controls"
         ),
     },
+    "idhwt": {
+        "label": "IDH-wildtype glioma",
+        "case_filter": {"idh": [0]},
+        "ctrl_filter": {"case": [0]},
+        "description": "IDH-wildtype glioma cases vs population controls",
+    },
+    "idhwt_gbm": {
+        "label": "IDH-wildtype glioblastoma",
+        "case_filter": {"idh": [0]},  # GBM subset filtering should be done via histology if available
+        "ctrl_filter": {"case": [0]},
+        "description": (
+            "IDH-wildtype glioblastoma cases vs population controls"
+        ),
+    },
 }
 
 # ═══════════════════════════════════════════════════════════════════════

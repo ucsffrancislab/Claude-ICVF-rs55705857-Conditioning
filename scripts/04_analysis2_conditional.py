@@ -4,8 +4,8 @@
 
 For each of 18 ICVF PGS, fit two models per dataset:
 
-  Unconditional:  logit(IDHmt) ~ ICVF_PGS + age + sex + PC1-PC8
-  Conditional:    logit(IDHmt) ~ ICVF_PGS + rs55705857_dosage + age + sex + PC1-PC8
+  Unconditional:  logit(phenotype) ~ ICVF_PGS + age + sex + PC1-PC8
+  Conditional:    logit(phenotype) ~ ICVF_PGS + rs55705857_dosage + age + sex + PC1-PC8
 
 Meta-analyse each model across datasets.
 FDR correction across 18 meta-analysis p-values (per model type).

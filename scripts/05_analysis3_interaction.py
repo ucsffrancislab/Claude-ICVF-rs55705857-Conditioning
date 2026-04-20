@@ -4,7 +4,7 @@
 
 For each of 18 ICVF PGS, fit per dataset:
 
-  logit(IDHmt) ~ ICVF_PGS + rs55705857_dosage
+  logit(phenotype) ~ ICVF_PGS + rs55705857_dosage
                  + ICVF_PGS × rs55705857_dosage
                  + age + sex + PC1-PC8
 
